@@ -530,6 +530,7 @@ where
                     // handle ChatResponse
                     let mut assistant_memory_content = String::new();
                     let mut is_task_evaluator_called = false;
+                    let mut tool_calls_to_store = Vec::new();
                     match current_chat_response {
                         ChatResponse::Text(text) => {
                             last_response_text = text.clone();
@@ -537,12 +538,16 @@ where
                         },
                         ChatResponse::ToolCalls(tool_calls) => {
                             let mut formatted_tool_results = String::new();
-                            for tool_call in tool_calls {
+                            for tool_call in &tool_calls {
                                 let formatted = format!(
                                     "[Tool name]: {}\n[Tool args]: {}\n[Tool result]: {}\n\n",
                                     tool_call.name, tool_call.args, tool_call.result
                                 );
                                 formatted_tool_results.push_str(&formatted);
+                                
+                                // Store the tool call for type-safe storage
+                                tool_calls_to_store.push(tool_call.clone());
+                                
                                 if tool_call.name == ToolDyn::name(&TaskEvaluator) {
                                     is_task_evaluator_called = true;
                                     match serde_json::from_str::<TaskStatus>(&tool_call.result) {
@@ -617,12 +622,23 @@ where
                     // Update the flag for the *next* iteration based on *this* iteration's call
                     was_prev_call_task_evaluator = is_task_evaluator_called && !task_complete;
 
-                    self.short_memory.add(
-                        &task,
-                        &self.config.name,
-                        Role::Assistant(self.config.name.to_owned()),
-                        assistant_memory_content.clone(), // Add the text or formatted tool calls
-                    );
+                    // Store tool calls with type safety if we have any
+                    if !tool_calls_to_store.is_empty() {
+                        self.short_memory.add_tool_calls(
+                            &task,
+                            &self.config.name,
+                            Role::Assistant(self.config.name.to_owned()),
+                            tool_calls_to_store,
+                        );
+                    } else {
+                        // Fall back to text storage for non-tool call responses
+                        self.short_memory.add(
+                            &task,
+                            &self.config.name,
+                            Role::Assistant(self.config.name.to_owned()),
+                            assistant_memory_content.clone(), // Add the text or formatted tool calls
+                        );
+                    }
 
                     // TODO: evaluate response
                     // TODO: Sentiment analysis
