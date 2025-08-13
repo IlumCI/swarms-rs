@@ -11,6 +11,42 @@ use thiserror::Error;
 
 use crate::structs::persistence::{self, PersistenceError};
 
+// Import ToolCallOutput from the agent module
+use crate::agent::swarms_agent::ToolCallOutput;
+
+/// AgentShortMemory provides thread-safe storage for agent conversations.
+/// 
+/// This struct now supports type-safe storage of tool call outputs, allowing
+/// workflows to retrieve typed data from conversations without parsing strings.
+/// 
+/// # Examples
+/// 
+/// ```rust
+/// use swarms_rs::structs::conversation::{AgentShortMemory, Role};
+/// use swarms_rs::agent::swarms_agent::ToolCallOutput;
+/// 
+/// let memory = AgentShortMemory::new();
+/// 
+/// // Store text messages
+/// memory.add("task1", "agent1", Role::User("user".to_string()), "Hello");
+/// 
+/// // Store tool calls with type safety
+/// let tool_calls = vec![
+///     ToolCallOutput {
+///         name: "calculator".to_string(),
+///         args: r#"{"operation": "add", "a": 1, "b": 2}"#.to_string(),
+///         result: "3".to_string(),
+///     }
+/// ];
+/// memory.add_tool_calls("task1", "agent1", Role::Assistant("agent1".to_string()), tool_calls);
+/// 
+/// // Retrieve typed tool call data
+/// if let Some(conversation) = memory.0.get("task1") {
+///     let all_tool_calls = conversation.get_tool_calls();
+///     let calculator_calls = conversation.get_tool_calls_by_name("calculator");
+///     let latest_calls = conversation.get_latest_tool_calls();
+/// }
+/// ```
 #[derive(Debug, Error)]
 pub enum ConversationError {
     #[error("Json error: {0}")]
@@ -40,6 +76,20 @@ impl AgentShortMemory {
             .entry(task.into())
             .or_insert(AgentConversation::new(conversation_owner.into()));
         conversation.add(role, message.into())
+    }
+
+    pub fn add_tool_calls(
+        &self,
+        task: impl Into<String>,
+        conversation_owner: impl Into<String>,
+        role: Role,
+        tool_calls: Vec<ToolCallOutput>,
+    ) {
+        let mut conversation = self
+            .0
+            .entry(task.into())
+            .or_insert(AgentConversation::new(conversation_owner.into()));
+        conversation.add_tool_calls(role, tool_calls)
     }
 }
 
@@ -104,6 +154,33 @@ impl AgentConversation {
         }
     }
 
+    /// Add tool calls to the conversation history with type safety.
+    pub fn add_tool_calls(&mut self, role: Role, tool_calls: Vec<ToolCallOutput>) {
+        // Only check message limit if it's set
+        if let Some(max) = self.max_messages {
+            if self.history.len() >= max {
+                // Remove oldest messages to make room for new ones
+                self.history.drain(0..(self.history.len() - max + 1));
+            }
+        }
+
+        let timestamp = Local::now().timestamp_millis();
+        let message = Message {
+            role,
+            content: Content::ToolCalls(tool_calls),
+        };
+        self.history.push(message);
+
+        if let Some(filepath) = &self.save_filepath {
+            let filepath = filepath.clone();
+            let history = self.history.clone();
+            tokio::spawn(async move {
+                let history = history;
+                let _ = Self::save_as_json(&filepath, &history).await;
+            });
+        }
+    }
+
     /// Delete a message from the conversation history.
     pub fn delete(&mut self, index: usize) {
         self.history.remove(index);
@@ -117,6 +194,46 @@ impl AgentConversation {
     /// Query a message in the conversation history.
     pub fn query(&self, index: usize) -> &Message {
         &self.history[index]
+    }
+
+    /// Get all tool calls from the conversation history.
+    pub fn get_tool_calls(&self) -> Vec<&ToolCallOutput> {
+        self.history
+            .iter()
+            .filter_map(|msg| match &msg.content {
+                Content::ToolCalls(tool_calls) => Some(tool_calls.iter().collect::<Vec<_>>()),
+                _ => None,
+            })
+            .flatten()
+            .collect()
+    }
+
+    /// Get tool calls by tool name from the conversation history.
+    pub fn get_tool_calls_by_name(&self, tool_name: &str) -> Vec<&ToolCallOutput> {
+        self.history
+            .iter()
+            .filter_map(|msg| match &msg.content {
+                Content::ToolCalls(tool_calls) => Some(
+                    tool_calls
+                        .iter()
+                        .filter(|tool_call| tool_call.name == tool_name)
+                        .collect::<Vec<_>>(),
+                ),
+                _ => None,
+            })
+            .flatten()
+            .collect()
+    }
+
+    /// Get the most recent tool calls from the conversation history.
+    pub fn get_latest_tool_calls(&self) -> Option<&Vec<ToolCallOutput>> {
+        self.history
+            .iter()
+            .rev()
+            .find_map(|msg| match &msg.content {
+                Content::ToolCalls(tool_calls) => Some(tool_calls),
+                _ => None,
+            })
     }
 
     /// Search for a message in the conversation history.
@@ -216,6 +333,7 @@ pub enum Role {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Content {
     Text(String),
+    ToolCalls(Vec<ToolCallOutput>),
 }
 
 impl Display for Role {
@@ -231,6 +349,19 @@ impl Display for Content {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Content::Text(text) => f.pad(text),
+            Content::ToolCalls(tool_calls) => {
+                let formatted = tool_calls
+                    .iter()
+                    .map(|tool_call| {
+                        format!(
+                            "[Tool name]: {}\n[Tool args]: {}\n[Tool result]: {}\n\n",
+                            tool_call.name, tool_call.args, tool_call.result
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("");
+                f.pad(&formatted)
+            }
         }
     }
 }
@@ -281,7 +412,27 @@ impl From<&AgentConversation> for Vec<crate::llm::completion::Message> {
                     crate::llm::completion::Message::user(format!("{}: {}", name, msg.content))
                 },
                 Role::Assistant(name) => {
-                    crate::llm::completion::Message::assistant(format!("{}: {}", name, msg.content))
+                    match &msg.content {
+                        Content::Text(text) => {
+                            crate::llm::completion::Message::assistant(format!("{}: {}", name, text))
+                        },
+                        Content::ToolCalls(tool_calls) => {
+                            // For tool calls, we need to preserve the structured format
+                            // that the LLM can understand. We'll format them in a way that
+                            // maintains the tool call information while being readable.
+                            let tool_call_text = tool_calls
+                                .iter()
+                                .map(|tool_call| {
+                                    format!(
+                                        "Tool call: {} with args: {} returned: {}",
+                                        tool_call.name, tool_call.args, tool_call.result
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            crate::llm::completion::Message::assistant(format!("{}: {}", name, tool_call_text))
+                        }
+                    }
                 },
             })
             .collect()
