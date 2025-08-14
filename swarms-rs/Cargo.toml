@@ -1,6 +1,6 @@
 [package]
 name = "swarms-rs"
-version = "0.1.8"
+version = "0.2.0"
 edition = "2024"
 description = "The Enterprise-Grade Production-Ready Multi-Agent Orchestration Framework in Rust"
 authors = ["Kye Gomez <kye@kyegomez.com>"]
@@ -8,7 +8,7 @@ license = "Apache-2.0"
 repository = "https://github.com/The-Swarm-Corporation/swarms-rs"
 documentation = "https://docs.rs/swarms-rs"
 readme = "README.md"
-keywords = ["ai", "agents", "swarms", "multi-agent", "llm"]
+keywords = ["ai", "agents", "swarms", "multi-agent", "llm", "rearrange", "ag"]
 
 [dependencies]
 chrono = { version = "0.4", features = ["serde"] }
@@ -28,6 +28,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 twox-hash = "2.1"
 zstd = "0.13.3"
 dotenv = "0.15"
+log = "0.4"
+env_logger = "0.11"
+colored = "3.0.0"
 petgraph = { version = "0.7", default-features = false, features = [
     "stable_graph",
 ] }
@@ -75,3 +78,7 @@ path = "examples/api_client_examples/batch_operations.rs"
 [[example]]
 name = "error_handling"
 path = "examples/api_client_examples/error_handling.rs"
+
+[[example]]
+name = "logging_example"
+path = "examples/logging_example.rs"

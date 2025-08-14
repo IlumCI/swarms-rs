@@ -6,6 +6,7 @@ use std::{
     sync::Arc,
 };
 
+use colored::*;
 use dashmap::DashMap;
 use futures::{StreamExt, future::BoxFuture, stream};
 use reqwest::IntoUrl;
@@ -30,6 +31,7 @@ use crate::{
         self,
         request::{CompletionRequest, ToolDefinition},
     },
+    log_agent, log_error_ctx, log_llm, log_memory, log_perf, log_task,
     structs::{
         conversation::{AgentShortMemory, Role},
         persistence,
@@ -135,7 +137,16 @@ where
     }
 
     pub fn build(mut self) -> SwarmsAgent<M> {
+        log::info!(
+            "🏗️  Building SwarmsAgent: {}",
+            self.config.name.bright_cyan().bold()
+        );
+
         if self.config.task_evaluator_tool_enabled {
+            log::debug!(
+                "📋 Adding task evaluator tool for agent: {}",
+                self.config.name.bright_cyan()
+            );
             self.tools.insert(0, ToolDyn::definition(&TaskEvaluator));
             self.tools_impl.insert(
                 ToolDyn::name(&TaskEvaluator),
@@ -143,14 +154,23 @@ where
             );
         }
 
-        SwarmsAgent {
+        let agent = SwarmsAgent {
             model: self.model,
-            config: self.config,
+            config: self.config.clone(),
             system_prompt: self.system_prompt,
             short_memory: AgentShortMemory::new(),
-            tools: self.tools,
+            tools: self.tools.clone(),
             tools_impl: self.tools_impl,
-        }
+        };
+
+        log::info!(
+            "✅ SwarmsAgent built successfully: {} (ID: {}) with {} tools",
+            agent.config.name.bright_cyan().bold(),
+            agent.config.id.bright_yellow(),
+            self.tools.len().to_string().bright_green().bold()
+        );
+
+        agent
     }
 
     // Configuration methods
@@ -375,22 +395,53 @@ where
 
     pub async fn prompt(&self, prompt: impl Into<String>) -> Result<String, AgentError> {
         let prompt = prompt.into();
+        let start_time = std::time::Instant::now();
+
+        log_llm!(
+            info,
+            &self.config.name,
+            &self.config.id,
+            "Prompt Request",
+            "Sending prompt to LLM: '{}'",
+            prompt.chars().take(100).collect::<String>()
+        );
+
         let request = CompletionRequest {
-            prompt: llm::completion::Message::user(prompt),
+            prompt: llm::completion::Message::user(prompt.clone()),
             system_prompt: self.system_prompt.clone(),
             chat_history: vec![],
             tools: vec![],
             temperature: Some(self.config.temperature),
             max_tokens: Some(self.config.max_tokens),
         };
-        let response = self.model.completion(request).await?;
+
+        let response = self.model.completion(request).await.map_err(|e| {
+            log_error_ctx!(&self.config.name, &self.config.id, &e, "LLM completion");
+            e
+        })?;
+
         let choice = response.choice.first().ok_or(AgentError::NoChoiceFound)?;
-        match ToOwned::to_owned(choice) {
-            llm::completion::AssistantContent::Text(text) => Ok(text.text),
+        let result = match ToOwned::to_owned(choice) {
+            llm::completion::AssistantContent::Text(text) => {
+                let duration = start_time.elapsed().as_millis() as u64;
+                log_perf!(info, "LLM", "completion_time", duration, "ms");
+                log_llm!(
+                    debug,
+                    &self.config.name,
+                    &self.config.id,
+                    "Prompt Response",
+                    "Received response ({}ms): '{}'",
+                    duration,
+                    text.text.chars().take(100).collect::<String>()
+                );
+                Ok(text.text)
+            },
             llm::completion::AssistantContent::ToolCall(_) => {
                 unreachable!("We don't provide tools")
             },
-        }
+        };
+
+        result
     }
 
     pub fn tool(mut self, tool: impl ToolDyn + 'static) -> Self {
@@ -435,6 +486,16 @@ where
 {
     fn run(&self, task: String) -> BoxFuture<Result<String, AgentError>> {
         Box::pin(async move {
+            let start_time = std::time::Instant::now();
+
+            log_task!(
+                info,
+                &self.config.name,
+                &self.config.id,
+                &task,
+                "Task initializing - Agent starting autonomous execution loop"
+            );
+
             self.short_memory.add(
                 &task,
                 &self.config.name,
@@ -442,8 +503,22 @@ where
                 &task,
             );
 
+            log_memory!(
+                debug,
+                &self.config.name,
+                &self.config.id,
+                "Save Task",
+                "Added task to short-term memory"
+            );
+
             // Plan
             if self.config.plan_enabled {
+                log_agent!(
+                    info,
+                    &self.config.name,
+                    &self.config.id,
+                    "Planning phase initiated"
+                );
                 self.plan(task.clone()).await?;
             }
 
@@ -454,6 +529,13 @@ where
 
             // Save state
             if self.config.autosave {
+                log_memory!(
+                    debug,
+                    &self.config.name,
+                    &self.config.id,
+                    "Autosave",
+                    "Saving agent state to disk"
+                );
                 self.save_task_state(task.clone()).await?;
             }
 
@@ -461,10 +543,36 @@ where
             let mut last_response_text = String::new();
             let mut task_complete = false;
             let mut was_prev_call_task_evaluator = false;
+
+            log_agent!(
+                info,
+                &self.config.name,
+                &self.config.id,
+                "Starting autonomous execution loop - Max loops: {}",
+                self.config.max_loops
+            );
+
             for loop_count in 0..self.config.max_loops {
                 if task_complete {
+                    log_agent!(
+                        info,
+                        &self.config.name,
+                        &self.config.id,
+                        "Task completed early at loop {} of {}",
+                        loop_count,
+                        self.config.max_loops
+                    );
                     break;
                 }
+
+                log_agent!(
+                    debug,
+                    &self.config.name,
+                    &self.config.id,
+                    "Starting loop iteration {} of {}",
+                    loop_count + 1,
+                    self.config.max_loops
+                );
 
                 let current_prompt: String;
 
@@ -657,6 +765,12 @@ where
                 }
 
                 if self.is_response_complete(last_response_text.clone()) {
+                    log_agent!(
+                        info,
+                        &self.config.name,
+                        &self.config.id,
+                        "Response marked as complete by completion checker"
+                    );
                     break;
                 }
 
@@ -668,8 +782,27 @@ where
 
             // Save state
             if self.config.autosave {
+                log_memory!(
+                    debug,
+                    &self.config.name,
+                    &self.config.id,
+                    "Final Autosave",
+                    "Saving final agent state after task completion"
+                );
                 self.save_task_state(task.clone()).await?;
             }
+
+            let total_duration = start_time.elapsed().as_millis() as u64;
+            log_perf!(info, "Agent", "total_execution_time", total_duration, "ms");
+
+            log_task!(
+                info,
+                &self.config.name,
+                &self.config.id,
+                &task,
+                "Task execution completed successfully in {}ms",
+                total_duration
+            );
 
             // TODO: Handle artifacts
 
@@ -811,7 +944,8 @@ pub struct ToolCallOutput {
     pub result: String,
 }
 
-#[tool(description = r#"
+#[tool(
+    description = r#"
     **Important**
     If previous message is a `task_evaluator` call, then you shouldn't call this tool.
 
@@ -819,16 +953,28 @@ pub struct ToolCallOutput {
     Finalize or request refinement for the current task.
     
     Call this when:
-    - All user requirements are fully satisfied (set `Complete`)
+    - All user requirements are fully satisfied (set status to "Complete")
     - Avoids unnecessary iterations, redundancy, or waste.
-    - Additional input/clarification is needed (set `Incomplete` with context)
+    - Additional input/clarification is needed (set status to "Incomplete" with context)
     
-    When `Complete`, the context is ignored, because the dialogue will terminate.
-    When `Incomplete`, your context becomes the system's next prompt, enabling iterative task refinement.
+    When status is "Complete", the context is ignored, because the dialogue will terminate.
+    When status is "Incomplete", your context becomes the system's next prompt, enabling iterative task refinement.
     Provide clear, actionable contexts to guide the next steps, the context should be used to guide yourself to complete the task.
-"#)]
-fn task_evaluator(status: TaskStatus) -> Result<TaskStatus, TaskEvaluatorError> {
-    Ok(status)
+"#,
+    arg(status, description = "Task status: either 'Complete' or 'Incomplete'"),
+    arg(context, description = "Context for incomplete tasks - guidance for next steps")
+)]
+fn task_evaluator(status: String, context: Option<String>) -> Result<TaskStatus, TaskEvaluatorError> {
+    match status.as_str() {
+        "Complete" => Ok(TaskStatus::Complete),
+        "Incomplete" => {
+            let context = context.unwrap_or_else(|| "Task needs further work".to_string());
+            Ok(TaskStatus::Incomplete { context })
+        }
+        _ => Ok(TaskStatus::Incomplete { 
+            context: format!("Invalid status '{}', treating as incomplete", status) 
+        })
+    }
 }
 
 /// Tracks task status and provides feedback for incomplete tasks.

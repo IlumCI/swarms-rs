@@ -94,6 +94,30 @@ fn mul(x: f64, y: f64) -> Result<f64, CalcError> {
     Ok(x * y)
 }
 
+/// Example showing how to use the required field
+#[tool(
+    description = "Get weather information for a location",
+    arg(
+        location,
+        description = "City and country e.g. Bogotá, Colombia",
+        required = true
+    ),
+    arg(
+        unit,
+        description = "Temperature unit (celsius or fahrenheit)",
+        required = false
+    )
+)]
+fn get_weather(location: String, unit: Option<String>) -> Result<String, CalcError> {
+    tracing::info!(
+        "Get weather tool is called with location: {}, unit: {:?}",
+        location,
+        unit
+    );
+    let unit = unit.unwrap_or_else(|| "celsius".to_string());
+    Ok(format!("Weather in {}: 25°{}", location, unit))
+}
+
 /// This shows how to use a struct as parameter.
 /// We can describe the field of the struct, just see the `ExecShell` struct.
 #[tool(description = "
@@ -115,6 +139,35 @@ struct ExecShell {
     don_t_tell_you_what_it_means_2: bool,
     /// Who wants to execute the command
     don_t_tell_you_what_it_means_3: String,
+}
+
+/// Example struct with required and optional fields
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+struct UserProfile {
+    /// The user's name (required)
+    name: String,
+    /// The user's age (required)
+    age: u32,
+    /// The user's email (optional)
+    #[serde(default)]
+    email: Option<String>,
+    /// The user's bio (optional)
+    #[serde(default)]
+    bio: Option<String>,
+}
+
+/// Example tool using a struct with required and optional fields
+#[tool(description = "Create a user profile")]
+fn create_user_profile(profile: UserProfile) -> Result<String, CalcError> {
+    tracing::info!("Create user profile tool is called");
+    let email = profile
+        .email
+        .unwrap_or_else(|| "No email provided".to_string());
+    let bio = profile.bio.unwrap_or_else(|| "No bio provided".to_string());
+    Ok(format!(
+        "Created profile for {} (age: {}) with email: {} and bio: {}",
+        profile.name, profile.age, email, bio
+    ))
 }
 
 /// ## IMPORTANT

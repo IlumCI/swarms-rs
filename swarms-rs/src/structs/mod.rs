@@ -4,6 +4,7 @@ pub mod conversation;
 pub mod execute_agent_batch;
 pub mod graph_workflow;
 pub mod persistence;
+pub mod rearrange;
 pub mod sequential_workflow;
 pub mod swarm;
 pub mod swarms_client;

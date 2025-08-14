@@ -1,3 +1,3 @@
-mod swarms_agent;
+pub mod swarms_agent;
 
 pub use swarms_agent::*;

@@ -18,6 +18,8 @@ pub trait Swarm {
 pub enum SwarmError {
     #[error("ConcurrentWorkflowError: {0}")]
     ConcurrentWorkflowError(#[from] ConcurrentWorkflowError),
+    #[error("AgentRearrangeError: {0}")]
+    AgentRearrangeError(#[from] crate::structs::rearrange::AgentRearrangeError),
 }
 
 #[derive(Clone, Default, Serialize)]

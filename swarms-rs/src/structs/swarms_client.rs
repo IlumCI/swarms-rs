@@ -433,7 +433,7 @@ impl<T: Clone> Cache<T> {
 
 /// Circuit breaker states
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum CircuitBreakerState {
+pub enum CircuitBreakerState {
     Closed,
     Open,
     HalfOpen,

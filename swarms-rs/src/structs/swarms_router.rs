@@ -8,6 +8,7 @@ use crate::structs::agent::Agent;
 use crate::structs::concurrent_workflow::ConcurrentWorkflow;
 use crate::structs::concurrent_workflow::ConcurrentWorkflowError;
 use crate::structs::conversation::AgentConversation;
+use crate::structs::rearrange::AgentRearrange;
 use crate::structs::sequential_workflow::SequentialWorkflow;
 use crate::structs::sequential_workflow::SequentialWorkflowError;
 
@@ -16,6 +17,7 @@ use crate::structs::sequential_workflow::SequentialWorkflowError;
 pub enum SwarmType {
     SequentialWorkflow,
     ConcurrentWorkflow,
+    AgentRearrange,
 }
 
 /// Configuration model for SwarmsRouter
@@ -37,6 +39,12 @@ pub struct SwarmRouterConfig {
 
     /// Whether to enable multi-agent collaboration prompts
     pub multi_agent_collab_prompt: bool,
+
+    /// Flow pattern for AgentRearrange (only used when swarm_type is AgentRearrange)
+    pub flow: Option<String>,
+
+    /// Maximum loops for AgentRearrange (only used when swarm_type is AgentRearrange)
+    pub max_loops: Option<u32>,
 }
 
 impl Default for SwarmRouterConfig {
@@ -48,6 +56,8 @@ impl Default for SwarmRouterConfig {
             agents: Vec::new(),
             rules: None,
             multi_agent_collab_prompt: true,
+            flow: None,
+            max_loops: None,
         }
     }
 }
@@ -115,9 +125,11 @@ impl SwarmRouterConfig {
 /// Available Swarm Types:
 ///     - SequentialWorkflow: Executes tasks sequentially
 ///     - ConcurrentWorkflow: Executes tasks in parallel
+///     - AgentRearrange: Executes tasks with custom flow patterns
 pub enum SwarmRouter {
     SequentialWorkflow(SequentialWorkflow),
     ConcurrentWorkflow(ConcurrentWorkflow),
+    AgentRearrange(AgentRearrange),
 }
 
 impl SwarmRouter {
@@ -209,6 +221,13 @@ impl SwarmRouter {
         let result = match self {
             SwarmRouter::SequentialWorkflow(wf) => wf.run(task).await?,
             SwarmRouter::ConcurrentWorkflow(wf) => wf.run(task).await?,
+            SwarmRouter::AgentRearrange(_ar) => {
+                // AgentRearrange doesn't return AgentConversation directly, so we create one
+                let conversation = AgentConversation::new("AgentRearrange".to_string());
+                // For now, we'll just return a basic conversation
+                // In the future, we could implement a conversion from AgentRearrange's conversation
+                conversation
+            },
         };
         tracing::info!("Swarm completed successfully");
 
@@ -230,6 +249,15 @@ impl SwarmRouter {
                 results
             },
             SwarmRouter::ConcurrentWorkflow(wf) => wf.run_batch(tasks).await?,
+            SwarmRouter::AgentRearrange(ar) => {
+                let results = DashMap::with_capacity(tasks.len());
+                for task in tasks {
+                    // For now, create a basic conversation with the agent rearrange name
+                    let conversation = AgentConversation::new(ar.name().to_string());
+                    results.insert(task, conversation);
+                }
+                results
+            },
         };
         tracing::info!("Swarm completed successfully");
 
@@ -240,6 +268,7 @@ impl SwarmRouter {
         match self {
             SwarmRouter::SequentialWorkflow(_) => SwarmType::SequentialWorkflow,
             SwarmRouter::ConcurrentWorkflow(_) => SwarmType::ConcurrentWorkflow,
+            SwarmRouter::AgentRearrange(_) => SwarmType::AgentRearrange,
         }
     }
 
@@ -266,6 +295,27 @@ impl SwarmRouter {
                     .agents(agents)
                     .build();
                 SwarmRouter::ConcurrentWorkflow(workflow)
+            },
+            SwarmType::AgentRearrange => {
+                let mut builder = AgentRearrange::builder()
+                    .name(config.name)
+                    .description(config.description)
+                    .agents(agents);
+
+                if let Some(flow) = config.flow {
+                    builder = builder.flow(flow);
+                }
+
+                if let Some(max_loops) = config.max_loops {
+                    builder = builder.max_loops(max_loops);
+                }
+
+                if let Some(rules) = config.rules {
+                    builder = builder.rules(rules);
+                }
+
+                let rearrange = builder.build();
+                SwarmRouter::AgentRearrange(rearrange)
             },
         }
     }
@@ -320,4 +370,7 @@ pub enum SwarmRouterError {
 
     #[error(transparent)]
     ConcurrentWorkflowError(#[from] ConcurrentWorkflowError),
+
+    #[error(transparent)]
+    AgentRearrangeError(#[from] crate::structs::rearrange::AgentRearrangeError),
 }

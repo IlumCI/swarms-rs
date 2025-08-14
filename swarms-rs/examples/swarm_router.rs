@@ -78,6 +78,8 @@ async fn main() -> Result<()> {
                 .to_string(),
         ),
         multi_agent_collab_prompt: true,
+        flow: None,
+        max_loops: None,
     };
 
     // Run sequential workflow
@@ -145,6 +147,8 @@ async fn main() -> Result<()> {
                 .to_string(),
         ),
         multi_agent_collab_prompt: true,
+        flow: None,
+        max_loops: None,
     };
 
     // Run concurrent workflow

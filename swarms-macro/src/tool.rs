@@ -19,6 +19,7 @@ struct ToolAttribute {
 struct ArgMeta {
     name: String,
     description: Option<String>,
+    required: Option<bool>,
 }
 
 impl Parse for ToolAttribute {
@@ -79,6 +80,7 @@ impl Parse for ArgMeta {
         let mut arg = ArgMeta {
             name: input.parse::<Ident>()?.to_string().trim().to_owned(),
             description: None,
+            required: None,
         };
 
         if input.peek(Token![,]) {
@@ -104,6 +106,16 @@ impl Parse for ArgMeta {
                                         )
                                     })?;
                                 arg.description = Some(lit.value());
+                            }
+                            "required" => {
+                                let lit = syn::parse2::<syn::LitBool>(nv.value.into_token_stream())
+                                    .map_err(|e| {
+                                        Error::new_spanned(
+                                            value,
+                                            format!("Expected boolean literal (true/false) for 'required' attribute, got: {}", e),
+                                        )
+                                    })?;
+                                arg.required = Some(lit.value);
                             }
                             _ => {
                                 return Err(Error::new_spanned(
@@ -295,6 +307,27 @@ pub fn tool_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         panic!("Struct args must be the only arg");
     }
 
+    // Validate that optional arguments are Option types
+    for arg in &tool_attr.args {
+        if let Some(false) = arg.required {
+            // Find the corresponding argument type
+            if let Some((_, ty)) = args.clone().find(|(pat, _)| {
+                if let syn::Pat::Ident(pat_ident) = &***pat {
+                    pat_ident.ident == arg.name
+                } else {
+                    false
+                }
+            }) {
+                if let Type::Path(type_path) = &**ty {
+                    let segment = &type_path.path.segments[0];
+                    if segment.ident != "Option" {
+                        panic!("Argument '{}' is marked as optional (required = false) but is not an Option type", arg.name);
+                    }
+                }
+            }
+        }
+    }
+
     // arg attributes must be one of the function arguments
     for arg in &tool_attr.args {
         if !arg_names.iter().any(|pat| {
@@ -338,6 +371,23 @@ pub fn tool_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
         })
         .collect();
 
+    // Collect required arguments
+    let required_args: Vec<_> = arg_names
+        .iter()
+        .filter_map(|pat| {
+            let ident = match &***pat {
+                syn::Pat::Ident(pat_ident) => &pat_ident.ident,
+                _ => panic!("Only simple identifiers are supported in tool arguments"),
+            };
+            let arg_meta = tool_attr.args.iter().find(|arg| *ident == arg.name);
+            if arg_meta.and_then(|arg| arg.required).unwrap_or(true) {
+                Some(quote! { stringify!(#ident) })
+            } else {
+                None
+            }
+        })
+        .collect();
+
     let args_struct_name = quote::format_ident!("{}Args", to_pascal_case(&tool_name));
 
     let call_impl = if input_fn.sig.asyncness.is_some() {
@@ -360,6 +410,14 @@ pub fn tool_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     let definition_impl = if !is_struct_args {
+        let required_field = if !required_args.is_empty() {
+            quote! {
+                "required": [#(#required_args),*],
+            }
+        } else {
+            quote! {}
+        };
+
         quote! {
             fn definition(&self) -> swarms_rs::llm::request::ToolDefinition {
                 swarms_rs::llm::request::ToolDefinition {
@@ -375,6 +433,7 @@ pub fn tool_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                                 }
                             ),*
                         },
+                        #required_field
                     }),
                 }
             }

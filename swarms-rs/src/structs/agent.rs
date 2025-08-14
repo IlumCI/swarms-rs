@@ -1,5 +1,8 @@
 use crate::structs::persistence;
 use crate::structs::tool::ToolError;
+// Logging imports available for future use
+// use crate::{log_agent, log_error_ctx};
+use colored::*;
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -43,7 +46,9 @@ pub struct AgentConfigBuilder {
 
 impl AgentConfigBuilder {
     pub fn agent_name(mut self, name: impl Into<String>) -> Self {
-        Arc::make_mut(&mut self.config).name = name.into();
+        let name = name.into();
+        log::debug!("🏷️  Setting agent name: {}", name.bright_cyan().bold());
+        Arc::make_mut(&mut self.config).name = name;
         self
     }
 
@@ -113,6 +118,15 @@ impl AgentConfigBuilder {
     }
 
     pub fn build(self) -> Arc<AgentConfig> {
+        let config = &self.config;
+        log::info!(
+            "🎯 Agent configuration built: {} (ID: {}) - Max loops: {}, Temperature: {}, Max tokens: {}",
+            config.name.bright_cyan().bold(),
+            config.id.bright_yellow(),
+            config.max_loops.to_string().bright_green(),
+            config.temperature.to_string().bright_blue(),
+            config.max_tokens.to_string().bright_purple()
+        );
         self.config
     }
 }
@@ -191,8 +205,14 @@ impl AgentConfig {
 
 impl Default for AgentConfig {
     fn default() -> Self {
+        let id = uuid::Uuid::new_v4().to_string();
+        log::debug!(
+            "🆕 Creating default agent configuration with ID: {}",
+            id.bright_yellow()
+        );
+
         Self {
-            id: uuid::Uuid::new_v4().to_string(),
+            id,
             name: "Agent".to_owned(),
             user_name: "User".to_owned(),
             description: None,
