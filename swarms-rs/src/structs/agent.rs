@@ -1,7 +1,5 @@
 use crate::structs::persistence;
 use crate::structs::tool::ToolError;
-// Logging imports available for future use
-// use crate::{log_agent, log_error_ctx};
 use colored::*;
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
@@ -47,7 +45,9 @@ pub struct AgentConfigBuilder {
 impl AgentConfigBuilder {
     pub fn agent_name(mut self, name: impl Into<String>) -> Self {
         let name = name.into();
-        log::debug!("🏷️  Setting agent name: {}", name.bright_cyan().bold());
+        if self.config.verbose {
+            log::debug!("🏷️  Setting agent name: {}", name.bright_cyan().bold());
+        }
         Arc::make_mut(&mut self.config).name = name;
         self
     }
@@ -117,16 +117,23 @@ impl AgentConfigBuilder {
         self
     }
 
+    pub fn verbose(mut self, verbose: bool) -> Self {
+        Arc::make_mut(&mut self.config).verbose = verbose;
+        self
+    }
+
     pub fn build(self) -> Arc<AgentConfig> {
         let config = &self.config;
-        log::info!(
-            "🎯 Agent configuration built: {} (ID: {}) - Max loops: {}, Temperature: {}, Max tokens: {}",
-            config.name.bright_cyan().bold(),
-            config.id.bright_yellow(),
-            config.max_loops.to_string().bright_green(),
-            config.temperature.to_string().bright_blue(),
-            config.max_tokens.to_string().bright_purple()
-        );
+        if config.verbose {
+            log::info!(
+                "🎯 Agent configuration built: {} (ID: {}) - Max loops: {}, Temperature: {}, Max tokens: {}",
+                config.name.bright_cyan().bold(),
+                config.id.bright_yellow(),
+                config.max_loops.to_string().bright_green(),
+                config.temperature.to_string().bright_blue(),
+                config.max_tokens.to_string().bright_purple()
+            );
+        }
         self.config
     }
 }
@@ -151,6 +158,7 @@ pub struct AgentConfig {
     pub stop_words: HashSet<String>,
     pub task_evaluator_tool_enabled: bool,
     pub concurrent_tool_call_enabled: bool,
+    pub verbose: bool,
     #[serde(skip)]
     pub response_cache: HashMap<String, String>,
 }
@@ -206,13 +214,9 @@ impl AgentConfig {
 impl Default for AgentConfig {
     fn default() -> Self {
         let id = uuid::Uuid::new_v4().to_string();
-        log::debug!(
-            "🆕 Creating default agent configuration with ID: {}",
-            id.bright_yellow()
-        );
-
-        Self {
-            id,
+        
+        let config = Self {
+            id: id.clone(),
             name: "Agent".to_owned(),
             user_name: "User".to_owned(),
             description: None,
@@ -228,8 +232,18 @@ impl Default for AgentConfig {
             stop_words: HashSet::with_capacity(16), // Pre-allocate capacity
             task_evaluator_tool_enabled: true,
             concurrent_tool_call_enabled: true,
+            verbose: true, // Default to verbose logging
             response_cache: HashMap::with_capacity(100), // Pre-allocate cache capacity
+        };
+        
+        if config.verbose {
+            log::debug!(
+                "🆕 Creating default agent configuration with ID: {}",
+                id.bright_yellow()
+            );
         }
+        
+        config
     }
 }
 

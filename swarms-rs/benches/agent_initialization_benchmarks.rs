@@ -23,6 +23,7 @@ fn create_simple_config(name: &str) -> AgentConfig {
         .max_loops(1)
         .max_tokens(100)
         .retry_attempts(0) // No retry attempts for faster initialization
+        .verbose(false)
         .build()
         .as_ref()
         .clone()
@@ -179,6 +180,7 @@ fn bench_different_configurations(c: &mut Criterion) {
                 .agent_name("MinimalAgent")
                 .max_loops(1)
                 .retry_attempts(0)
+                .verbose(false)
                 .build()
                 .as_ref()
                 .clone();
@@ -201,6 +203,7 @@ fn bench_different_configurations(c: &mut Criterion) {
                 .user_name("TestUser")
                 .description("Full configuration agent for benchmarking")
                 .temperature(0.7)
+                .verbose(false)
                 .max_loops(1)
                 .build()
                 .as_ref()
