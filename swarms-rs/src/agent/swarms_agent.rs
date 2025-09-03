@@ -1,94 +1,133 @@
 //! # Swarms Agent Implementation
 //! 
 //! This module provides the core `SwarmsAgent` implementation - an autonomous AI agent
-//! that can execute tasks using Large Language Models (LLMs) with tool integration,
-//! memory management, and configurable execution patterns.
+//! that can execute complex tasks through iterative loops, tool usage, and memory management.
+//! 
+//! ## Overview
+//! 
+//! The `SwarmsAgent` is designed to autonomously complete tasks by:
+//! 
+//! 1. **Planning**: Optional planning phase to break down complex tasks
+//! 2. **Execution**: Iterative execution loops with configurable retry mechanisms
+//! 3. **Tool Usage**: Integration with both native Rust tools and external MCP servers
+//! 4. **Memory Management**: Short-term conversation memory and optional long-term storage
+//! 5. **State Persistence**: Automatic saving and restoration of agent state
+//! 6. **Error Recovery**: Built-in retry mechanisms and graceful error handling
 //! 
 //! ## Key Features
 //! 
-//! - **LLM Integration**: Works with any LLM provider that implements the `llm::Model` trait
-//! - **Tool System**: Supports both native Rust tools and MCP (Model Context Protocol) servers
-//! - **Memory Management**: Short-term memory for conversation history and context
-//! - **Task Planning**: Optional planning phase with configurable prompts
-//! - **State Persistence**: Automatic saving and loading of agent state
-//! - **Concurrent Execution**: Support for concurrent tool calls and multiple tasks
-//! - **Configurable Logging**: Optional verbose logging for debugging and monitoring
+//! - **Autonomous Task Execution**: Can complete complex tasks without human intervention
+//! - **Tool Integration**: Seamlessly integrates with Rust tools and external MCP servers
+//! - **Memory Management**: Maintains conversation history and context throughout execution
+//! - **State Persistence**: Optional automatic saving of agent state to disk
+//! - **Configurable Execution**: Flexible configuration for different use cases
+//! - **Concurrent Operations**: Supports concurrent tool calls and multiple task execution
+//! - **Error Recovery**: Includes retry mechanisms and comprehensive error handling
 //! 
-//! ## Basic Usage
+//! ## Architecture
+//! 
+//! The agent follows a modular architecture:
+//! 
+//! - **LLM Integration**: Pluggable LLM providers (OpenAI, Anthropic, etc.)
+//! - **Tool System**: Dynamic tool loading and execution with MCP support
+//! - **Memory System**: Short-term conversation memory with optional long-term storage
+//! - **Configuration System**: Flexible configuration with builder pattern
+//! - **Persistence Layer**: JSON-based state saving with content-based hashing
+//! 
+//! ## Core Components
+//! 
+//! - **SwarmsAgentBuilder**: Builder pattern for agent configuration
+//! - **SwarmsAgent**: Main agent implementation with autonomous execution
+//! - **ChatResponse**: Enum for handling text and tool call responses
+//! - **ToolCallOutput**: Structure for tool execution results
+//! - **TaskEvaluator**: Built-in tool for task completion assessment
+//! - **TaskStatus**: Enum for tracking task completion state
+//! 
+//! ## Usage Patterns
+//! 
+//! ### Simple Task Execution
 //! 
 //! ```rust,no_run
 //! use swarms_rs::agent::SwarmsAgentBuilder;
 //! use swarms_rs::llm::provider::openai::OpenAIProvider;
 //! 
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! // Create an LLM provider
 //! let model = OpenAIProvider::new("your-api-key")?;
 //! 
-//! // Build an agent
 //! let agent = SwarmsAgentBuilder::new_with_model(model)
-//!     .agent_name("TaskAgent")
-//!     .system_prompt("You are a helpful AI assistant.")
-//!     .max_loops(3)
-//!     .temperature(0.7)
-//!     .verbose(true) // Enable logging
+//!     .agent_name("TaskExecutor")
+//!     .system_prompt("You are a helpful task execution assistant.")
+//!     .max_loops(5)
 //!     .build();
 //! 
-//! // Execute a task
-//! let result = agent.run("Analyze the current market trends".to_string()).await?;
+//! let result = agent.run("Analyze the quarterly sales data".to_string()).await?;
 //! println!("Result: {}", result);
 //! # Ok(())
 //! # }
 //! ```
 //! 
-//! ## Advanced Configuration
+//! ### Interactive Chat
 //! 
 //! ```rust,no_run
-//! use swarms_rs::agent::SwarmsAgentBuilder;
+//! use swarms_rs::agent::{SwarmsAgentBuilder, ChatResponse};
 //! use swarms_rs::llm::provider::openai::OpenAIProvider;
-//! use swarms_rs::structs::tool::Tool;
 //! 
-//! # async fn advanced_example() -> Result<(), Box<dyn std::error::Error>> {
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! let model = OpenAIProvider::new("your-api-key")?;
 //! 
 //! let agent = SwarmsAgentBuilder::new_with_model(model)
-//!     .agent_name("AdvancedAgent")
-//!     .system_prompt("You are an advanced AI agent with specialized tools.")
-//!     .max_loops(5)
-//!     .temperature(0.3)
-//!     .enable_plan(Some("Create a step-by-step plan for: ".to_string()))
-//!     .enable_autosave()
-//!     .save_state_dir("./agent_states")
-//!     .retry_attempts(2)
-//!     .add_stop_word("TASK_COMPLETE")
-//!     .verbose(false) // Disable logging for production
+//!     .system_prompt("You are a helpful assistant.")
 //!     .build();
 //! 
-//! let result = agent.run("Complex analytical task".to_string()).await?;
+//! let response = agent.chat("What's 2 + 2?", vec![]).await?;
+//! 
+//! match response {
+//!     ChatResponse::Text(text) => println!("Response: {}", text),
+//!     ChatResponse::ToolCalls(calls) => {
+//!         for call in calls {
+//!             println!("Tool {}: {}", call.name, call.result);
+//!         }
+//!     }
+//! }
 //! # Ok(())
 //! # }
 //! ```
 //! 
-//! ## Tool Integration
+//! ## Advanced Features
 //! 
-//! The agent supports multiple ways to add tools:
+//! - **Planning**: Enable planning mode for complex task decomposition
+//! - **Tool Integration**: Add custom tools or connect to MCP servers
+//! - **Memory Persistence**: Save and restore agent state across sessions
+//! - **Concurrent Execution**: Run multiple tasks in parallel
+//! - **Custom Configuration**: Fine-tune execution parameters
+//! - **Logging and Monitoring**: Comprehensive logging for debugging and monitoring
+//! - **Performance Optimization**: Configurable retry attempts and loop limits
+//! - **Error Handling**: Graceful error recovery and detailed error reporting
+//! - **Performance Considerations**:
+//!     - **Memory Usage**: Short-term memory grows with conversation length
+//!     - **Tool Execution**: Tools can be executed concurrently for better performance
+//!     - **State Persistence**: Automatic saving can be disabled for performance-critical scenarios
+//!     - **Loop Limits**: Configure max_loops to prevent infinite execution
+//!     - **Retry Logic**: Balance reliability with performance through retry configuration
+//!     - **Logging Overhead**: Disable verbose logging in production for better performance
 //! 
-//! - **Native Rust Tools**: Implement the `Tool` trait
-//! - **MCP Servers**: Connect to external MCP servers via SSE or stdio
-//! - **Built-in Tools**: Task evaluator tool for autonomous task completion
+//! ## Security Considerations
 //! 
-//! ## Memory and Persistence
-//! 
-//! - **Short-term Memory**: Maintains conversation history during task execution
-//! - **State Persistence**: Optional automatic saving of agent state to disk
-//! - **Task Hashing**: Efficient state management using content-based hashing
+//! - **Tool Sandboxing**: Tools should implement their own security measures
+//! - **Input Validation**: Validate all inputs before processing
+//! - **State Isolation**: Each agent instance maintains isolated state
+//! - **Error Information**: Avoid exposing sensitive information in error messages
+//! - **Resource Limits**: Configure appropriate limits to prevent resource exhaustion
+//! - **Access Control**: Implement access controls for sensitive operations
 
 use std::{
     ffi::OsStr,
     hash::{Hash, Hasher},
+    sync::{Arc, Mutex, mpsc},
     ops::Deref,
     path::Path,
-    sync::Arc,
 };
+use twox_hash::XxHash64;
 
 use colored::*;
 use dashmap::DashMap;
@@ -107,7 +146,6 @@ use tokio::{
     process::Command,
     sync::{Mutex, mpsc},
 };
-use twox_hash::XxHash3_64;
 
 use crate::{
     self as swarms_rs,
@@ -118,12 +156,11 @@ use crate::{
     log_agent, log_error_ctx, log_llm, log_memory, log_perf, log_task,
     structs::{
         conversation::{AgentShortMemory, Role},
-        persistence,
+        agent::{Agent, AgentConfig, AgentError},
         tool::{MCPTool, Tool, ToolDyn},
+        persistence,
     },
 };
-
-use crate::structs::agent::{Agent, AgentConfig, AgentError};
 
 /// Builder pattern implementation for creating `SwarmsAgent` instances with customizable configuration.
 /// 
@@ -167,7 +204,7 @@ where
     /// Optional system prompt to guide agent behavior
     system_prompt: Option<String>,
     /// List of tool definitions available to the agent
-    tools: Vec<ToolDefinition>,
+    tools: Vec<llm::request::ToolDefinition>,
     /// Implementation instances of tools, keyed by tool name
     tools_impl: DashMap<String, Arc<dyn ToolDyn>>,
 }
@@ -704,7 +741,7 @@ where
     /// Short-term memory for maintaining conversation history
     short_memory: AgentShortMemory,
     /// List of available tool definitions
-    tools: Vec<ToolDefinition>,
+    tools: Vec<llm::request::ToolDefinition>,
     /// Tool implementation instances (not serialized)
     #[serde(skip)]
     tools_impl: DashMap<String, Arc<dyn ToolDyn>>,
@@ -746,6 +783,21 @@ where
             tools: vec![],
             tools_impl: DashMap::new(),
         }
+    }
+
+    /// Set the configuration for this agent
+    pub fn with_config(mut self, config: AgentConfig) -> Self {
+        self.config = config;
+        self
+    }
+
+    pub fn get_config(&self) -> &AgentConfig {
+        &self.config
+    }
+
+    /// Get a formatter instance configured for this agent
+    pub fn get_formatter(&self) -> crate::utils::formatter::Formatter {
+        self.config.get_formatter()
     }
 
     /// Performs a single chat interaction with the agent.
@@ -845,7 +897,7 @@ where
                                         Some(tool) => tool,
                                         None => {
                                             tracing::error!("Tool not found: {}", tool_call.name);
-                                            results.lock().await.push(ToolCallOutput {
+                                            results.lock().unwrap().push(ToolCallOutput {
                                                 name: tool_call.name,
                                                 args: tool_call.arguments.to_string(),
                                                 result: "Tool not found".to_owned(),
@@ -866,7 +918,7 @@ where
                                             args,
                                             e
                                         );
-                                        results.lock().await.push(ToolCallOutput {
+                                        results.lock().unwrap().push(ToolCallOutput {
                                             name: tool_call.name,
                                             args,
                                             result: e.to_string(),
@@ -874,7 +926,7 @@ where
                                         return;
                                     },
                                 };
-                                results.lock().await.push(ToolCallOutput {
+                                results.lock().unwrap().push(ToolCallOutput {
                                     name: tool_call.name,
                                     args,
                                     result,
@@ -894,7 +946,7 @@ where
                         // execute tool
                         let result_str = tool.call(args.clone()).await?;
                         // collect results
-                        results.lock().await.push(ToolCallOutput {
+                        results.lock().unwrap().push(ToolCallOutput {
                             name: tool_call.name.clone(),
                             args,
                             result: result_str,
@@ -903,7 +955,7 @@ where
                 }
 
                 Ok(ChatResponse::ToolCalls(
-                    Arc::clone(&results).lock().await.clone(),
+                    Arc::clone(&results).lock().unwrap().clone(),
                 ))
             },
         }
@@ -1268,6 +1320,9 @@ where
                         assistant_memory_content.clone(), // Add the text or formatted tool calls
                     );
 
+                    // TODO: evaluate response
+                    // TODO: Sentiment analysis
+
                     success = true;
                 }
 
@@ -1399,7 +1454,7 @@ where
     }
 
     fn save_task_state(&self, task: String) -> BoxFuture<Result<(), AgentError>> {
-        let mut hasher = XxHash3_64::default();
+        let mut hasher = XxHash64::default();
         task.hash(&mut hasher);
         let task_hash = hasher.finish();
         let task_hash = format!("{:x}", task_hash & 0xFFFFFFFF); // lower 32 bits of the hash
@@ -1486,7 +1541,6 @@ pub enum ChatResponse {
     /// This variant contains the raw text response when the agent doesn't
     /// need to use any tools to complete the request.
     Text(String),
-    
     /// Results from executing one or more tool calls requested by the LLM.
     /// 
     /// This variant contains the outputs from all tools that were called
@@ -1522,13 +1576,11 @@ pub struct ToolCallOutput {
     /// 
     /// This corresponds to the tool's identifier as registered with the agent.
     pub name: String,
-    
     /// The arguments passed to the tool as a JSON string.
     /// 
     /// The arguments are serialized as JSON to provide a consistent format
     /// regardless of the tool's specific parameter structure.
     pub args: String,
-    
     /// The result returned by the tool's execution as a string.
     /// 
     /// All tool results are converted to strings for consistent handling,
@@ -1540,7 +1592,7 @@ pub struct ToolCallOutput {
     description = r#"
     **Important**
     If previous message is a `task_evaluator` call, then you shouldn't call this tool.
-
+    
     **Task Evaluator**
     Finalize or request refinement for the current task.
     
@@ -1602,7 +1654,6 @@ pub enum TaskStatus {
     /// When this status is returned, the agent will terminate its execution
     /// loop and return the final result. No further iterations will be performed.
     Complete,
-    
     /// Indicates that the task is not yet complete and requires additional work.
     /// 
     /// The `context` field provides specific guidance for what needs to be done
