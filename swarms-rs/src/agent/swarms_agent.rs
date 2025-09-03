@@ -138,14 +138,12 @@ use rmcp::{
     model::{ClientCapabilities, ClientInfo, Implementation},
     transport::{SseTransport, TokioChildProcess},
 };
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use swarms_macro::tool;
 use thiserror::Error;
-use tokio::{
-    process::Command,
-    sync::{Mutex, mpsc},
-};
+use tokio::process::Command;
 
 use crate::{
     self as swarms_rs,
@@ -207,6 +205,8 @@ where
     tools: Vec<llm::request::ToolDefinition>,
     /// Implementation instances of tools, keyed by tool name
     tools_impl: DashMap<String, Arc<dyn ToolDyn>>,
+    /// Enable or disable markdown output formatting
+    markdown_enabled: bool,
 }
 
 impl<M> SwarmsAgentBuilder<M>
@@ -242,6 +242,7 @@ where
             system_prompt: None,
             tools: vec![],
             tools_impl: DashMap::new(),
+            markdown_enabled: false,
         }
     }
 
@@ -511,6 +512,7 @@ where
             short_memory: AgentShortMemory::new(),
             tools: self.tools.clone(),
             tools_impl: self.tools_impl,
+            markdown_enabled: self.markdown_enabled,
         };
 
         if agent.config.verbose {
@@ -635,6 +637,38 @@ where
     ///     .build();
     /// # Ok(())
     /// # }
+    /// Enable or disable markdown output formatting for this agent.
+    /// 
+    /// When markdown is enabled, the agent will format its output with beautiful
+    /// borders, headers, and structured formatting. When disabled, output is plain text.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `enabled` - `true` to enable markdown formatting, `false` to disable
+    /// 
+    /// # Examples
+    /// 
+    /// ```rust,no_run
+    /// use swarms_rs::agent::SwarmsAgentBuilder;
+    /// use swarms_rs::llm::provider::openai::OpenAIProvider;
+    /// 
+    /// // For beautiful formatted output
+    /// let pretty_agent = SwarmsAgentBuilder::new_with_model(model.clone())
+    ///     .md(true)
+    ///     .build();
+    /// 
+    /// // For plain text output (faster)
+    /// let fast_agent = SwarmsAgentBuilder::new_with_model(model)
+    ///     .md(false)
+    ///     .build();
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn md(mut self, enabled: bool) -> Self {
+        self.markdown_enabled = enabled;
+        self
+    }
+
     /// ```
     pub fn verbose(mut self, verbose: bool) -> Self {
         self.config.verbose = verbose;
@@ -745,6 +779,8 @@ where
     /// Tool implementation instances (not serialized)
     #[serde(skip)]
     tools_impl: DashMap<String, Arc<dyn ToolDyn>>,
+    /// Enable or disable markdown output formatting
+    markdown_enabled: bool,
 }
 
 impl<M> SwarmsAgent<M>
@@ -782,6 +818,7 @@ where
             short_memory: AgentShortMemory::new(),
             tools: vec![],
             tools_impl: DashMap::new(),
+            markdown_enabled: false,
         }
     }
 
@@ -798,6 +835,19 @@ where
     /// Get a formatter instance configured for this agent
     pub fn get_formatter(&self) -> crate::utils::formatter::Formatter {
         self.config.get_formatter()
+    }
+
+    /// Check if markdown output is enabled for this agent
+    pub fn is_markdown_enabled(&self) -> bool {
+        self.markdown_enabled
+    }
+
+    /// Auto-render agent output with markdown formatting if enabled
+    pub fn auto_render_output(&self, content: &str) {
+        if self.markdown_enabled {
+            let mut formatter = self.get_formatter();
+            formatter.render_agent_output(&self.config.name, content);
+        }
     }
 
     /// Performs a single chat interaction with the agent.
