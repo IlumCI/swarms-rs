@@ -6,6 +6,7 @@ use thiserror::Error;
 use tracing::{debug, error, info};
 
 use crate::structs::swarms_client::{AgentSpec, SwarmsClient};
+use crate::utils::formatter::Formatter;
 
 // ================================================================================================
 // ERROR TYPES
@@ -117,6 +118,7 @@ pub struct SwarmRouterCall {
 /// 3. Agents execute tasks and report back to the director
 /// 4. Director evaluates results and issues new orders if needed (up to max_loops)
 /// 5. All context and conversation history is preserved throughout the process
+/// 6. Agent outputs are beautifully formatted with markdown and clear visual separation
 #[derive(Clone)]
 pub struct HierarchicalSwarm {
     /// The name of the swarm
@@ -157,6 +159,8 @@ pub struct HierarchicalSwarm {
     conversation: Arc<Mutex<Vec<HashMap<String, serde_json::Value>>>>,
     /// Execution statistics for dashboard
     execution_stats: Arc<Mutex<ExecutionStats>>,
+    /// Formatter for beautiful agent output rendering
+    formatter: Formatter,
 }
 
 impl std::fmt::Debug for HierarchicalSwarm {
@@ -181,6 +185,7 @@ impl std::fmt::Debug for HierarchicalSwarm {
             .field("client", &"<client>")
             .field("conversation", &"<conversation>")
             .field("execution_stats", &"<execution_stats>")
+            .field("formatter", &"<formatter>")
             .finish()
     }
 }
@@ -294,10 +299,16 @@ impl HierarchicalSwarm {
                 start_time: std::time::Instant::now(),
                 agent_stats: HashMap::new(),
             })),
+            formatter: Formatter::auto(), // Auto-enable markdown for beautiful output
         };
 
         swarm.init_swarm()?;
         Ok(swarm)
+    }
+
+    /// Gets the formatter instance for this swarm
+    pub fn get_formatter(&mut self) -> &mut Formatter {
+        &mut self.formatter
     }
 
     /// Updates the dashboard with current execution status
@@ -383,7 +394,7 @@ impl HierarchicalSwarm {
     }
 
     /// Runs a task through the director agent with the current conversation context
-    pub async fn run_director(&self, task: &str, _img: Option<&str>) -> Result<SwarmSpecResponse> {
+    pub async fn run_director(&mut self, task: &str, _img: Option<&str>) -> Result<SwarmSpecResponse> {
         if self.verbose {
             info!(" Running director with task: {}...", &task[..task.len().min(100)]);
         }
@@ -419,6 +430,14 @@ impl HierarchicalSwarm {
             } else {
                 "No planning output received".to_string()
             };
+
+            // Render planning agent output with beautiful markdown
+            self.formatter.render_agent_output(
+                "Planning Director", 
+                &format!("# Strategic Planning\n\n## Task Analysis\n{}\n\n## Recommended Approach\n{}", 
+                    task, planning_content)
+            );
+
             director_task.push_str(&format!("\n\nPlanning: {}", planning_content));
         }
 
@@ -450,11 +469,6 @@ impl HierarchicalSwarm {
         };
         self.add_to_conversation("Director", &output_content).await?;
 
-        if self.verbose {
-            info!(" Director execution completed");
-            debug!(" Director output type: {:?}", response.outputs);
-        }
-
         // Parse the response to extract plan and orders
         let response_content = if let Some(first_output) = response.outputs.first() {
             if let Some(content) = first_output.get("content") {
@@ -465,7 +479,27 @@ impl HierarchicalSwarm {
         } else {
             serde_json::Value::String("No output received".to_string())
         };
-        self.parse_director_response(&response_content)
+
+        let parsed_response = self.parse_director_response(&response_content)?;
+
+        // Render director output with beautiful markdown formatting
+        self.formatter.render_agent_output(
+            "Director", 
+            &format!("# Strategic Plan\n\n## Overview\n{}\n\n## Agent Assignments\n{}", 
+                parsed_response.plan,
+                parsed_response.orders.iter()
+                    .map(|order| format!("- **{}**: {}", order.agent_name, order.task))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            )
+        );
+
+        if self.verbose {
+            info!(" Director execution completed");
+            debug!(" Director output type: {:?}", response.outputs);
+        }
+
+        Ok(parsed_response)
     }
 
     /// Parses the director's response to extract plan and orders
@@ -555,7 +589,7 @@ impl HierarchicalSwarm {
                     if let Some(agent_match) = line.find("Agent") {
                         let agent_part = &line[agent_match..];
                         if let Some(task_start) = agent_part.find(":") {
-                            let mut agent_name = agent_part[..task_start].trim();
+                            let agent_name = agent_part[..task_start].trim();
                             let task = agent_part[task_start + 1..].trim();
                             
                             // Clean up agent name - remove asterisks, numbers, and extra formatting
@@ -595,7 +629,7 @@ impl HierarchicalSwarm {
             // If no specific orders found, create default orders for available agents
             if !self.agents.is_empty() {
                 let mut default_orders = Vec::new();
-                for (i, agent) in self.agents.iter().enumerate() {
+                for (_i, agent) in self.agents.iter().enumerate() {
                     let task = format!("Execute the research task focusing on your area of expertise: {}", agent.description.as_deref().unwrap_or("general research"));
                     default_orders.push(HierarchicalOrder {
                         agent_name: agent.agent_name.clone(),
@@ -843,7 +877,7 @@ impl HierarchicalSwarm {
     /// Executes the orders from the director's output (distribute to agents)
     /// This represents the "Distribute to Agents" and "Sequential Agent Execution" steps
     /// Each agent can build upon the previous agent's output
-    async fn execute_orders(&self, orders: &[HierarchicalOrder]) -> Result<Vec<String>> {
+    async fn execute_orders(&mut self, orders: &[HierarchicalOrder]) -> Result<Vec<String>> {
         if self.verbose {
             info!("⚡ Distributing {} orders to specialized agents with memory", orders.len());
         }
@@ -867,7 +901,7 @@ impl HierarchicalSwarm {
                 order.task.clone()
             };
 
-            let output = self.call_single_agent_optimized(&order.agent_name, &enhanced_task).await?;
+            let output = self.call_single_agent_with_formatting(&order.agent_name, &enhanced_task).await?;
             outputs.push(output.clone());
             previous_outputs.push(format!("{}: {}", order.agent_name, output));
         }
@@ -881,44 +915,23 @@ impl HierarchicalSwarm {
 
     /// Executes the orders from the director's output in parallel (without memory)
     /// This is the original parallel execution method
-    async fn execute_orders_parallel(&self, orders: &[HierarchicalOrder]) -> Result<Vec<String>> {
+    async fn execute_orders_parallel(&mut self, orders: &[HierarchicalOrder]) -> Result<Vec<String>> {
         if self.verbose {
             info!(" Executing {} orders in parallel", orders.len());
         }
 
         use futures::future::join_all;
 
-        let futures: Vec<_> = orders
-            .iter()
-            .enumerate()
-            .map(|(i, order)| {
-                let verbose = self.verbose;
-                let agent_name = order.agent_name.clone();
-                let task = order.task.clone();
-                
-                async move {
-                    if verbose {
-                        info!(" Executing order {}/{}: {}", i + 1, orders.len(), agent_name);
-                    }
-                    
-                    // Use optimized agent call for better performance
-                    self.call_single_agent_optimized(&agent_name, &task).await
-                }
-            })
-            .collect();
-
-        let results = join_all(futures).await;
-        
-        // Collect results and handle errors
         let mut outputs = Vec::new();
-        for result in results {
-            match result {
-                Ok(output) => outputs.push(output),
-                Err(e) => {
-                    error!(" Agent execution failed: {:?}", e);
-                    return Err(e);
-                }
+        
+        // Execute agents in parallel but collect results sequentially for formatting
+        for (i, order) in orders.iter().enumerate() {
+            if self.verbose {
+                info!(" Executing order {}/{}: {}", i + 1, orders.len(), order.agent_name);
             }
+            
+            let output = self.call_single_agent_with_formatting(&order.agent_name, &order.task).await?;
+            outputs.push(output);
         }
 
         if self.verbose {
@@ -928,8 +941,8 @@ impl HierarchicalSwarm {
         Ok(outputs)
     }
 
-    /// Calls a single agent with the given task (optimized for speed)
-    async fn call_single_agent_optimized(&self, agent_name: &str, task: &str) -> Result<String> {
+    /// Calls a single agent with beautiful markdown formatting
+    async fn call_single_agent_with_formatting(&mut self, agent_name: &str, task: &str) -> Result<String> {
         if self.verbose {
             info!(" Calling agent: {}", agent_name);
         }
@@ -966,6 +979,13 @@ impl HierarchicalSwarm {
         } else {
             "No output received".to_string()
         };
+
+        // Render agent output with beautiful markdown formatting
+        self.formatter.render_agent_output(
+            agent_name,
+            &format!("# Task Execution\n\n## Assignment\n{}\n\n## Results\n{}", 
+                task, output_content)
+        );
         
         // Only add to conversation if verbose or interactive mode is enabled
         if self.verbose || self.interactive {
@@ -977,169 +997,6 @@ impl HierarchicalSwarm {
         }
 
         Ok(output_content)
-    }
-
-    /// Calls a single agent with the given task (original method with full logging)
-    async fn call_single_agent(&self, agent_name: &str, task: &str) -> Result<String> {
-        if self.verbose {
-            info!(" Calling agent: {}", agent_name);
-        }
-
-        // Update dashboard for agent start
-        self.update_dashboard(DashboardUpdate {
-            current_loop: 0, // Will be updated by caller
-            total_loops: self.max_loops,
-            current_agent: Some(agent_name.to_string()),
-            agent_status: AgentStatus::Executing,
-            progress: 0.0, // Will be calculated by caller
-            latest_output: None,
-            error: None,
-        }).await;
-
-        let start_time = std::time::Instant::now();
-
-        // Find agent by name with flexible matching
-        let agent = self.find_agent_by_name(agent_name)?;
-
-        let history = self.get_conversation_str().await?;
-        let agent_task = format!("History: {} \n\n Task: {}", history, task);
-
-        let response = match self.client
-            .agent()
-            .completion()
-            .agent_name(&agent.agent_name)
-            .task(&agent_task)
-            .model(&agent.model_name)
-            .system_prompt(agent.system_prompt.as_deref().unwrap_or(""))
-            .temperature(agent.temperature)
-            .max_tokens(agent.max_tokens)
-            .send()
-            .await {
-                Ok(resp) => resp,
-                Err(e) => {
-                    // Update dashboard with error
-                    self.update_dashboard(DashboardUpdate {
-                        current_loop: 0,
-                        total_loops: self.max_loops,
-                        current_agent: Some(agent_name.to_string()),
-                        agent_status: AgentStatus::Failed,
-                        progress: 0.0,
-                        latest_output: None,
-                        error: Some(e.to_string()),
-                    }).await;
-                    
-                    // Update execution stats
-                    let execution_time = start_time.elapsed().as_secs_f64();
-                    if let Err(stats_err) = self.update_execution_stats(agent_name, AgentStatus::Failed, execution_time).await {
-                        error!("Failed to update execution stats: {:?}", stats_err);
-                    }
-                    
-                    return Err(HierarchicalSwarmError::ApiError(e));
-                }
-            };
-
-        let output_content = if let Some(first_output) = response.outputs.first() {
-            if let Some(content) = first_output.get("content") {
-                content.as_str().unwrap_or("").to_string()
-            } else {
-                serde_json::to_string(&first_output).unwrap_or_default()
-            }
-        } else {
-            "No output received".to_string()
-        };
-        
-        self.add_to_conversation(agent_name, &output_content).await?;
-
-        let execution_time = start_time.elapsed().as_secs_f64();
-
-        // Update execution stats
-        if let Err(stats_err) = self.update_execution_stats(agent_name, AgentStatus::Completed, execution_time).await {
-            error!("Failed to update execution stats: {:?}", stats_err);
-        }
-
-        // Update dashboard for agent completion
-        self.update_dashboard(DashboardUpdate {
-            current_loop: 0,
-            total_loops: self.max_loops,
-            current_agent: Some(agent_name.to_string()),
-            agent_status: AgentStatus::Completed,
-            progress: 0.0,
-            latest_output: Some(output_content.clone()),
-            error: None,
-        }).await;
-
-        if self.verbose {
-            info!(" Agent {} completed task successfully", agent_name);
-        }
-
-        Ok(output_content)
-    }
-
-    /// Find agent by name with flexible matching
-    fn find_agent_by_name(&self, agent_name: &str) -> Result<&AgentSpec> {
-        // Clean the agent name first
-        let clean_agent_name = agent_name
-            .replace("*", "")
-            .replace("#", "")
-            .replace("**", "")
-            .trim()
-            .to_string();
-        
-        // First try exact match with cleaned name
-        if let Some(agent) = self.agents.iter().find(|a| a.agent_name == clean_agent_name) {
-            return Ok(agent);
-        }
-
-        // Try partial matches
-        let agent_name_lower = clean_agent_name.to_lowercase();
-        
-        // Map common patterns to actual agent names
-        let agent_mappings = [
-            ("research", "Research Coordinator"),
-            ("coordinator", "Research Coordinator"),
-            ("technology", "Technology Researcher"),
-            ("tech", "Technology Researcher"),
-            ("economic", "Economic Analyst"),
-            ("economy", "Economic Analyst"),
-            ("ethics", "Ethics Specialist"),
-            ("ethical", "Ethics Specialist"),
-            ("future", "Future Trends Analyst"),
-            ("trends", "Future Trends Analyst"),
-            ("trend", "Future Trends Analyst"),
-            ("agent a", "Research Coordinator"),
-            ("agent b", "Technology Researcher"),
-            ("agent c", "Economic Analyst"),
-            ("agent d", "Ethics Specialist"),
-            ("agent e", "Future Trends Analyst"),
-            ("agent f", "Future Trends Analyst"), // Map Agent F to Future Trends Analyst
-        ];
-
-        for (keyword, actual_name) in &agent_mappings {
-            if agent_name_lower.contains(keyword) {
-                if let Some(agent) = self.agents.iter().find(|a| a.agent_name == *actual_name) {
-                    return Ok(agent);
-                }
-            }
-        }
-
-        // Try fuzzy matching on agent names
-        for agent in &self.agents {
-            let agent_name_lower_actual = agent.agent_name.to_lowercase();
-            if agent_name_lower.contains(&agent_name_lower_actual) || 
-               agent_name_lower_actual.contains(&agent_name_lower) {
-                return Ok(agent);
-            }
-        }
-
-        // If no match found, return error with available agents
-        let available_agents: Vec<String> = self.agents
-            .iter()
-            .map(|a| a.agent_name.clone())
-            .collect();
-        Err(HierarchicalSwarmError::AgentNotFound {
-            agent_name: clean_agent_name,
-            available_agents,
-        })
     }
 
     /// Provides feedback from the director based on agent outputs
@@ -2117,6 +1974,7 @@ mod tests {
         // Reset
         swarm.reset().await.unwrap();
         assert_eq!(swarm.conversation_length().await.unwrap(), 0);
+        assert_eq!(swarm.get_conversation_str().await.unwrap(), "");
     }
 
     #[test]
