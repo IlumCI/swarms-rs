@@ -1,8 +1,30 @@
 use std::env;
+
 use anyhow::Result;
-use swarms_rs::structs::hierarchical_swarm::HierarchicalSwarmBuilder;
+use swarms_rs::llm::provider::openai::OpenAI;
+use swarms_rs::structs::hierarchical_swarm::{HierarchicalSwarmBuilder, HierarchicalSwarm};
 use swarms_rs::structs::swarms_client::{AgentSpec, SwarmsClient};
-use swarms_rs::utils::formatter::Formatter;
+
+/// **SIMPLE MARKDOWN USAGE EXAMPLE**
+/// 
+/// Enable beautiful markdown output with just one line:
+/// ```rust
+/// let swarm = HierarchicalSwarmBuilder::new()
+///     .name("My Swarm")
+///     .md(true)  // 🎨 That's it! Everything renders automatically
+///     .build()?;
+/// 
+/// // Execute - all agents get beautiful output automatically!
+/// let results = swarm.run("My task", None).await?;
+/// ```
+/// 
+/// **What happens automatically when .md(true):**
+/// - Director planning gets beautiful borders and markdown
+/// - Each worker agent gets bordered output with markdown
+/// - Feedback and evaluation get professional formatting
+/// - Workflow completion gets summary with markdown
+/// - No manual formatter management needed!
+/// - Everything renders across the whole swarm automatically!
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -21,13 +43,6 @@ async fn main() -> Result<()> {
             "API_KEY_HERE".to_string()
         })
     });
-
-    // Create a formatter for the example output (OPTIONAL - for demo purposes)
-    let mut formatter = Formatter::auto();
-    
-    formatter.render_section_header("Post-Civil War Communist Society Planning");
-    formatter.render_info("This example demonstrates the hierarchical multi-agent system planning a perfect communist society in modern USA after a 2030 civil war");
-    formatter.render_info("The core swarm prioritizes PERFORMANCE, but we'll use optional beautiful formatting for this demo");
 
     // Create Swarms client with OpenAI fallback
     let client = SwarmsClient::builder()
@@ -89,10 +104,10 @@ Example format:
         tools_dictionary: None,
     };
 
-    let social_engineer = AgentSpec {
-        agent_name: "Social Engineer".to_string(),
+    let social_planner = AgentSpec {
+        agent_name: "Social Planner".to_string(),
         description: Some("Worker Agent planning social structures and governance".to_string()),
-        system_prompt: Some("You are a Social Engineer Worker Agent. Design communist social structures including governance systems, community organization, education, healthcare, and social services. Focus on collective decision-making, equal rights, and community solidarity. Execute the task assigned by the Director Agent.".to_string()),
+        system_prompt: Some("You are a Social Planner Worker Agent. Design communist social structures including governance systems, community organization, education, healthcare, and social services. Focus on collective decision-making, equal rights, and community solidarity. Execute the task assigned by the Director Agent.".to_string()),
         model_name: "gpt-4o-mini".to_string(),
         auto_generate_prompt: false,
         max_tokens: 2000,
@@ -102,10 +117,10 @@ Example format:
         tools_dictionary: None,
     };
 
-    let infrastructure_planner = AgentSpec {
-        agent_name: "Infrastructure Planner".to_string(),
+    let infrastructure_engineer = AgentSpec {
+        agent_name: "Infrastructure Engineer".to_string(),
         description: Some("Worker Agent planning physical infrastructure and technology".to_string()),
-        system_prompt: Some("You are an Infrastructure Planner Worker Agent. Design communist infrastructure including housing, transportation, energy systems, technology integration, and public spaces. Focus on sustainability, accessibility, and collective ownership. Execute the task assigned by the Director Agent.".to_string()),
+        system_prompt: Some("You are an Infrastructure Engineer Worker Agent. Design communist infrastructure including housing, transportation, energy systems, technology integration, and public spaces. Focus on sustainability, accessibility, and collective ownership. Execute the task assigned by the Director Agent.".to_string()),
         model_name: "gpt-4o-mini".to_string(),
         auto_generate_prompt: false,
         max_tokens: 2000,
@@ -115,10 +130,10 @@ Example format:
         tools_dictionary: None,
     };
 
-    let cultural_architect = AgentSpec {
-        agent_name: "Cultural Architect".to_string(),
+    let governance_specialist = AgentSpec {
+        agent_name: "Governance Specialist".to_string(),
         description: Some("Worker Agent designing cultural and educational systems".to_string()),
-        system_prompt: Some("You are a Cultural Architect Worker Agent. Design communist cultural systems including education, arts, media, recreation, and community activities. Focus on collective cultural development, critical thinking, and cultural equality. Execute the task assigned by the Director Agent.".to_string()),
+        system_prompt: Some("You are a Governance Specialist Worker Agent. Design communist cultural systems including education, arts, media, recreation, and community activities. Focus on collective cultural development, critical thinking, and cultural equality. Execute the task assigned by the Director Agent.".to_string()),
         model_name: "gpt-4o-mini".to_string(),
         auto_generate_prompt: false,
         max_tokens: 2000,
@@ -131,89 +146,40 @@ Example format:
     // Step 3: Build the Hierarchical Swarm following the architecture
     let swarm = HierarchicalSwarmBuilder::new()
         .name("Post-Civil War Communist Society Planning Swarm")
-        .description("Demonstrates the hierarchical architecture: Director → Worker Agents with Memory for societal planning")
+        .description("A hierarchical swarm that plans a post-civil war communist society")
         .agent(director_agent)
         .agent(economic_architect)
-        .agent(social_engineer)
-        .agent(infrastructure_planner)
-        .agent(cultural_architect)
-        .max_loops(2) // Allow for refinement loops
-        .verbose(false) // Disable verbose logging for performance
-        .interactive(false) // Disable interactive dashboard
+        .agent(social_planner)
+        .agent(infrastructure_engineer)
+        .agent(governance_specialist)
+        .max_loops(2)
         .sequential_execution(true) // Use sequential execution with memory for better results
+        .md(true) // 🎨 ENABLE BEAUTIFUL MARKDOWN OUTPUT - Simple one-liner!
         .client(client)
         .build()
         .expect("Failed to create hierarchical swarm");
 
-    formatter.render_success("Post-civil war communist society planning swarm created successfully!");
-    formatter.render_info(&format!("Swarm configuration: {}", swarm.get_configuration()));
-    formatter.render_info("Note: Core swarm is PERFORMANCE OPTIMIZED - beautiful output is optional for demos");
-
-    // Step 4: Define the User Task
+    // Define the task
     let task = "Design a perfect communist society for modern USA after a civil war in 2030. The civil war was triggered by the Trump administration declaring an American Empire, leading to widespread social unrest and eventual collapse of the capitalist system. Plan for economic equality, collective ownership, social justice, sustainable infrastructure, and cultural transformation. Provide comprehensive implementation strategies for transitioning from post-war chaos to a functioning communist society.";
 
-    formatter.render_section_header("User Task");
-    formatter.render_info(&format!("Task: {}", task));
-
-    // Step 5: Execute the Hierarchical Process 
-    formatter.render_section_header("Execution Options");
-    formatter.render_info("Option 1: PERFORMANCE MODE (default) - Maximum speed, minimal formatting");
-    formatter.render_info("Option 2: DEMO MODE (optional) - Beautiful agent output with markdown");
-
-    // OPTION 1: Performance mode (default) - Maximum speed
-    formatter.render_section_header("PERFORMANCE MODE: Maximum Speed Execution");
-    let start_time = std::time::Instant::now();
-    
+    // Execute - everything renders automatically with beautiful markdown!
+    // No manual formatter management needed - just .md(true) and go!
     match swarm.run(task, None).await {
         Ok(outputs) => {
-            let duration = start_time.elapsed();
-            formatter.render_success(&format!("Communist society planning completed in {:?}!", duration));
-            formatter.render_info(&format!("Generated {} comprehensive planning documents", outputs.len()));
-            formatter.render_info("Core swarm executed at MAXIMUM SPEED with minimal formatting overhead");
+            // Beautiful markdown output was automatically rendered for:
+            // - Director planning and coordination
+            // - Each worker agent execution
+            // - Feedback and evaluation
+            // - Workflow completion
+            println!("✅ Communist society planning process completed successfully!");
+            println!("📊 Generated {} comprehensive planning documents", outputs.len());
         }
         Err(e) => {
-            formatter.render_error(&format!("Communist society planning failed: {:?}", e));
+            println!("❌ Communist society planning failed: {:?}", e);
         }
     }
 
-    // OPTION 2: Demo mode with beautiful formatting (optional)
-    formatter.render_section_header("DEMO MODE: Beautiful Agent Output (Optional)");
-    formatter.render_info("Now executing with beautiful agent-level markdown formatting for demonstration...");
-
-    // Create a demo formatter for beautiful output
-    let mut demo_formatter = swarm.create_formatter();
-    let start_time_demo = std::time::Instant::now();
-
-    match swarm.run_with_formatter(task, None, &mut demo_formatter).await {
-        Ok(outputs) => {
-            let duration = start_time_demo.elapsed();
-            formatter.render_success(&format!("Beautiful demo execution completed in {:?}!", duration));
-            formatter.render_info(&format!("Generated {} comprehensive planning documents with beautiful formatting", outputs.len()));
-            
-            // Show individual agent outputs with beautiful formatting
-            for (i, output) in outputs.iter().enumerate() {
-                if !output.trim().is_empty() {
-                    demo_formatter.render_agent_output(&format!("Planning Agent {}", i + 1), output);
-                }
-            }
-        }
-        Err(e) => {
-            formatter.render_error(&format!("Beautiful demo execution failed: {:?}", e));
-        }
-    }
-
-    // Step 6: Show the hierarchical process summary
-    formatter.render_section_header("Performance vs Beauty Trade-off Summary");
-    formatter.render_info("The system provides two execution modes:");
-    formatter.render_info("1. ✓ PERFORMANCE MODE: Maximum speed, minimal formatting (default)");
-    formatter.render_info("2. ✓ DEMO MODE: Beautiful agent output with markdown (optional)");
-    formatter.render_info("3. ✓ Core swarm prioritizes SPEED over visual formatting");
-    formatter.render_info("4. ✓ Beautiful output is available when explicitly requested");
-    formatter.render_info("5. ✓ Agent-level markdown control for demos and examples");
-    formatter.render_info("6. ✓ Production use gets maximum performance");
-    formatter.render_info("7. ✓ Demo use gets beautiful visual separation");
-
-    formatter.render_workflow_completion("Performance vs Beauty demonstration");
-
+    println!("🎉 Post-civil war communist society planning demonstration completed!");
+    println!("💡 Tip: Use .md(true) to enable beautiful markdown output for any swarm!");
     Ok(())
 } 
