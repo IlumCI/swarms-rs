@@ -1,5 +1,6 @@
 use colored::*;
-use std::sync::OnceLock;
+// Remove the OnceLock import since we're removing global functionality
+// use std::sync::OnceLock;
 
 // MARKDOWN RENDERING RULES
 // ========================
@@ -44,15 +45,53 @@ use std::sync::OnceLock;
 // - Complex nested structures → May break rendering
 
 /// A simple, essential formatter for console output
+/// Each agent should have its own formatter instance for per-agent markdown control
+/// Markdown is automatically enabled when markdown rendering methods are called
 pub struct Formatter {
     markdown_enabled: bool,
 }
 
 impl Formatter {
     /// Creates a new Formatter instance
+    /// 
+    /// # Arguments
+    /// * `markdown` - Whether to enable markdown rendering for this formatter instance
+    /// 
+    /// # Examples
+    /// ```
+    /// use swarms_rs::utils::formatter::Formatter;
+    /// 
+    /// // Create a formatter with markdown enabled
+    /// let formatter = Formatter::new(true);
+    /// 
+    /// // Create a formatter with markdown disabled for performance
+    /// let fast_formatter = Formatter::new(false);
+    /// ```
     pub fn new(markdown: bool) -> Self {
         Self {
             markdown_enabled: markdown,
+        }
+    }
+
+    /// Creates a new Formatter instance that automatically enables markdown when needed
+    /// 
+    /// # Examples
+    /// ```
+    /// use swarms-rs::utils::formatter::Formatter;
+    /// 
+    /// // Create a formatter that automatically enables markdown when used
+    /// let formatter = Formatter::auto();
+    /// ```
+    pub fn auto() -> Self {
+        Self {
+            markdown_enabled: false, // Start disabled, will auto-enable when needed
+        }
+    }
+
+    /// Automatically enables markdown if it's not already enabled
+    fn auto_enable_markdown(&mut self) {
+        if !self.markdown_enabled {
+            self.markdown_enabled = true;
         }
     }
 
@@ -239,7 +278,10 @@ impl Formatter {
     }
 
     /// Renders markdown text with proper formatting and colors
-    pub fn render_markdown(&self, text: &str) {
+    pub fn render_markdown(&mut self, text: &str) {
+        // Auto-enable markdown when this method is called
+        self.auto_enable_markdown();
+        
         if !self.markdown_enabled {
             // Fast path: just print the text without formatting
             println!("{}", text);
@@ -693,7 +735,10 @@ impl Formatter {
     }
 
     /// Renders agent output with enhanced borders and styling
-    pub fn render_agent_output(&self, agent_name: &str, content: &str) {
+    pub fn render_agent_output(&mut self, agent_name: &str, content: &str) {
+        // Auto-enable markdown when this method is called
+        self.auto_enable_markdown();
+        
         if self.markdown_enabled {
             self.render_agent_output_tui(agent_name, content);
         } else {
@@ -781,52 +826,51 @@ impl Formatter {
 
 impl Default for Formatter {
     fn default() -> Self {
-        Self::new(false) // Disable markdown by default for better performance
+        Self::auto() // Auto-enable markdown when needed
     }
 }
 
 // Static formatter instance for convenience functions
-static FORMATTER: OnceLock<Formatter> = OnceLock::new();
+// static FORMATTER: OnceLock<Formatter> = OnceLock::new();
 
-fn get_formatter() -> &'static Formatter {
-    FORMATTER.get_or_init(|| Formatter::new(false))
-}
+// fn get_formatter() -> &'static Formatter {
+//     FORMATTER.get_or_init(|| Formatter::new(false))
+// }
 
 // Convenience functions for easy access - now use static instance
-pub fn render_markdown(text: &str) {
-    get_formatter().render_markdown(text);
-}
+// pub fn render_markdown(text: &str) {
+//     get_formatter().render_markdown(text);
+// }
 
-pub fn render_section_header(title: &str) {
-    get_formatter().render_section_header(title);
-}
+// pub fn render_section_header(title: &str) {
+//     get_formatter().render_section_header(title);
+// }
 
-pub fn render_success(message: &str) {
-    get_formatter().render_success(message);
-}
+// pub fn render_success(message: &str) {
+//     get_formatter().render_success(message);
+// }
 
-pub fn render_error(message: &str) {
-    get_formatter().render_error(message);
-}
+// pub fn render_error(message: &str) {
+//     get_formatter().render_error(message);
+// }
 
-pub fn render_info(message: &str) {
-    get_formatter().render_info(message);
-}
+// pub fn render_info(message: &str) {
+//     get_formatter().render_info(message);
+// }
 
-pub fn render_warning(message: &str) {
-    get_formatter().render_warning(message);
-}
+// pub fn render_warning(message: &str) {
+//     get_formatter().render_warning(message);
+// }
 
-pub fn render_workflow_completion(workflow_name: &str) {
-    get_formatter().render_workflow_completion(workflow_name);
-}
+// pub fn render_workflow_completion(workflow_name: &str) {
+//     get_formatter().render_workflow_completion(workflow_name);
+// }
 
-/// Renders agent output with enhanced borders and styling
-pub fn render_agent_output(agent_name: &str, content: &str) {
-    get_formatter().render_agent_output(agent_name, content);
-}
+// pub fn render_agent_output(agent_name: &str, content: &str) {
+//     get_formatter().render_agent_output(agent_name, content);
+// }
 
-/// Initialize the formatter (for compatibility with existing code)
-pub fn init_formatter(markdown: bool) {
-    let _ = FORMATTER.set(Formatter::new(markdown));
-}
+// /// Initialize the formatter (for compatibility with existing code)
+// pub fn init_formatter(markdown: bool) {
+//     let _ = FORMATTER.set(Formatter::new(markdown));
+// }
