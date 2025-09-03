@@ -6,7 +6,6 @@ use thiserror::Error;
 use tracing::{debug, error, info};
 
 use crate::structs::swarms_client::{AgentSpec, SwarmsClient};
-use crate::utils::formatter::Formatter;
 
 // ================================================================================================
 // ERROR TYPES
@@ -118,7 +117,9 @@ pub struct SwarmRouterCall {
 /// 3. Agents execute tasks and report back to the director
 /// 4. Director evaluates results and issues new orders if needed (up to max_loops)
 /// 5. All context and conversation history is preserved throughout the process
-/// 6. Agent outputs are beautifully formatted with markdown and clear visual separation
+/// 
+/// **Performance Note**: The core swarm prioritizes speed over visual formatting.
+/// For beautiful markdown output, use the optional formatter methods or examples.
 #[derive(Clone)]
 pub struct HierarchicalSwarm {
     /// The name of the swarm
@@ -159,8 +160,6 @@ pub struct HierarchicalSwarm {
     conversation: Arc<Mutex<Vec<HashMap<String, serde_json::Value>>>>,
     /// Execution statistics for dashboard
     execution_stats: Arc<Mutex<ExecutionStats>>,
-    /// Formatter for beautiful agent output rendering
-    formatter: Formatter,
 }
 
 impl std::fmt::Debug for HierarchicalSwarm {
@@ -185,7 +184,6 @@ impl std::fmt::Debug for HierarchicalSwarm {
             .field("client", &"<client>")
             .field("conversation", &"<conversation>")
             .field("execution_stats", &"<execution_stats>")
-            .field("formatter", &"<formatter>")
             .finish()
     }
 }
@@ -254,6 +252,9 @@ pub struct AgentStats {
 
 impl HierarchicalSwarm {
     /// Creates a new HierarchicalSwarm with the given parameters
+    /// 
+    /// **Performance Optimized**: Core swarm prioritizes speed over visual formatting.
+    /// For beautiful output, use the optional `render_with_formatter()` methods.
     pub fn new(
         name: String,
         description: String,
@@ -299,16 +300,29 @@ impl HierarchicalSwarm {
                 start_time: std::time::Instant::now(),
                 agent_stats: HashMap::new(),
             })),
-            formatter: Formatter::auto(), // Auto-enable markdown for beautiful output
         };
 
         swarm.init_swarm()?;
         Ok(swarm)
     }
 
-    /// Gets the formatter instance for this swarm
-    pub fn get_formatter(&mut self) -> &mut Formatter {
-        &mut self.formatter
+    /// Creates a formatter instance for optional beautiful output rendering.
+    /// 
+    /// **Usage**: Call this when you want beautiful markdown output in examples or demos.
+    /// The core swarm operations remain performance-optimized without automatic formatting.
+    /// 
+    /// # Examples
+    /// 
+    /// ```rust
+    /// // For performance-critical production use (default)
+    /// let results = swarm.run(task, None).await?;
+    /// 
+    /// // For beautiful demo output (optional)
+    /// let mut formatter = swarm.create_formatter();
+    /// let results = swarm.run_with_formatter(task, None, &mut formatter).await?;
+    /// ```
+    pub fn create_formatter(&self) -> crate::utils::formatter::Formatter {
+        crate::utils::formatter::Formatter::auto()
     }
 
     /// Updates the dashboard with current execution status
@@ -394,7 +408,8 @@ impl HierarchicalSwarm {
     }
 
     /// Runs a task through the director agent with the current conversation context
-    pub async fn run_director(&mut self, task: &str, _img: Option<&str>) -> Result<SwarmSpecResponse> {
+    /// **Performance Optimized**: No automatic formatting for maximum speed
+    pub async fn run_director(&self, task: &str, _img: Option<&str>) -> Result<SwarmSpecResponse> {
         if self.verbose {
             info!(" Running director with task: {}...", &task[..task.len().min(100)]);
         }
@@ -430,13 +445,6 @@ impl HierarchicalSwarm {
             } else {
                 "No planning output received".to_string()
             };
-
-            // Render planning agent output with beautiful markdown
-            self.formatter.render_agent_output(
-                "Planning Director", 
-                &format!("# Strategic Planning\n\n## Task Analysis\n{}\n\n## Recommended Approach\n{}", 
-                    task, planning_content)
-            );
 
             director_task.push_str(&format!("\n\nPlanning: {}", planning_content));
         }
@@ -482,8 +490,21 @@ impl HierarchicalSwarm {
 
         let parsed_response = self.parse_director_response(&response_content)?;
 
-        // Render director output with beautiful markdown formatting
-        self.formatter.render_agent_output(
+        if self.verbose {
+            info!(" Director execution completed");
+            debug!(" Director output type: {:?}", response.outputs);
+        }
+
+        Ok(parsed_response)
+    }
+
+    /// **OPTIONAL**: Runs director with beautiful markdown output formatting
+    /// Use this in examples/demos when you want beautiful visual output
+    pub async fn run_director_with_formatter(&mut self, task: &str, _img: Option<&str>, formatter: &mut crate::utils::formatter::Formatter) -> Result<SwarmSpecResponse> {
+        let parsed_response = self.run_director(task, _img).await?;
+
+        // Render director output with beautiful markdown formatting (optional)
+        formatter.render_agent_output(
             "Director", 
             &format!("# Strategic Plan\n\n## Overview\n{}\n\n## Agent Assignments\n{}", 
                 parsed_response.plan,
@@ -493,11 +514,6 @@ impl HierarchicalSwarm {
                     .join("\n")
             )
         );
-
-        if self.verbose {
-            info!(" Director execution completed");
-            debug!(" Director output type: {:?}", response.outputs);
-        }
 
         Ok(parsed_response)
     }
@@ -660,6 +676,7 @@ impl HierarchicalSwarm {
     /// 3. Agents execute tasks in parallel
     /// 4. Collect and report results
     /// 5. Director evaluates results
+    /// **Performance Optimized**: No automatic formatting for maximum speed
     pub async fn step(&self, task: &str, img: Option<&str>) -> Result<Vec<String>> {
         if self.verbose {
             info!("👣 Executing hierarchical step for task: {}...", &task[..task.len().min(100)]);
@@ -698,6 +715,7 @@ impl HierarchicalSwarm {
     }
 
     /// Executes the hierarchical swarm for a specified number of feedback loops
+    /// **Performance Optimized**: No automatic formatting for maximum speed
     pub async fn run(&self, task: &str, img: Option<&str>) -> Result<Vec<String>> {
         let mut current_loop = 0;
         let mut last_output = Vec::new();
@@ -805,7 +823,25 @@ impl HierarchicalSwarm {
         Ok(last_output)
     }
 
+    /// **OPTIONAL**: Executes the hierarchical swarm with beautiful markdown output formatting
+    /// Use this in examples/demos when you want beautiful visual output
+    pub async fn run_with_formatter(&self, task: &str, img: Option<&str>, formatter: &mut crate::utils::formatter::Formatter) -> Result<Vec<String>> {
+        // Render swarm initialization with beautiful formatting
+        formatter.render_section_header(&format!("Hierarchical Swarm: {}", self.name));
+        formatter.render_info(&format!("Task: {}", task));
+        formatter.render_info(&format!("Max loops: {}, Agents: {}", self.max_loops, self.agents.len()));
+
+        let results = self.run(task, img).await?;
+
+        // Render completion summary
+        formatter.render_workflow_completion(&format!("Hierarchical Swarm: {}", self.name));
+        formatter.render_success(&format!("Completed with {} agents", self.agents.len()));
+
+        Ok(results)
+    }
+
     /// Executes the hierarchical swarm with streaming output
+    /// **Performance Optimized**: No automatic formatting for maximum speed
     pub async fn run_stream(
         &self,
         task: &str,
@@ -877,7 +913,8 @@ impl HierarchicalSwarm {
     /// Executes the orders from the director's output (distribute to agents)
     /// This represents the "Distribute to Agents" and "Sequential Agent Execution" steps
     /// Each agent can build upon the previous agent's output
-    async fn execute_orders(&mut self, orders: &[HierarchicalOrder]) -> Result<Vec<String>> {
+    /// **Performance Optimized**: No automatic formatting for maximum speed
+    async fn execute_orders(&self, orders: &[HierarchicalOrder]) -> Result<Vec<String>> {
         if self.verbose {
             info!("⚡ Distributing {} orders to specialized agents with memory", orders.len());
         }
@@ -901,7 +938,7 @@ impl HierarchicalSwarm {
                 order.task.clone()
             };
 
-            let output = self.call_single_agent_with_formatting(&order.agent_name, &enhanced_task).await?;
+            let output = self.call_single_agent_optimized(&order.agent_name, &enhanced_task).await?;
             outputs.push(output.clone());
             previous_outputs.push(format!("{}: {}", order.agent_name, output));
         }
@@ -915,23 +952,45 @@ impl HierarchicalSwarm {
 
     /// Executes the orders from the director's output in parallel (without memory)
     /// This is the original parallel execution method
-    async fn execute_orders_parallel(&mut self, orders: &[HierarchicalOrder]) -> Result<Vec<String>> {
+    /// **Performance Optimized**: No automatic formatting for maximum speed
+    async fn execute_orders_parallel(&self, orders: &[HierarchicalOrder]) -> Result<Vec<String>> {
         if self.verbose {
             info!(" Executing {} orders in parallel", orders.len());
         }
 
         use futures::future::join_all;
 
-        let mut outputs = Vec::new();
+        let futures: Vec<_> = orders
+            .iter()
+            .enumerate()
+            .map(|(i, order)| {
+                let verbose = self.verbose;
+                let agent_name = order.agent_name.clone();
+                let task = order.task.clone();
+                
+                async move {
+                    if verbose {
+                        info!(" Executing order {}/{}: {}", i + 1, orders.len(), agent_name);
+                    }
+                    
+                    // Use optimized agent call for better performance
+                    self.call_single_agent_optimized(&agent_name, &task).await
+                }
+            })
+            .collect();
+
+        let results = join_all(futures).await;
         
-        // Execute agents in parallel but collect results sequentially for formatting
-        for (i, order) in orders.iter().enumerate() {
-            if self.verbose {
-                info!(" Executing order {}/{}: {}", i + 1, orders.len(), order.agent_name);
+        // Collect results and handle errors
+        let mut outputs = Vec::new();
+        for result in results {
+            match result {
+                Ok(output) => outputs.push(output),
+                Err(e) => {
+                    error!(" Agent execution failed: {:?}", e);
+                    return Err(e);
+                }
             }
-            
-            let output = self.call_single_agent_with_formatting(&order.agent_name, &order.task).await?;
-            outputs.push(output);
         }
 
         if self.verbose {
@@ -941,8 +1000,9 @@ impl HierarchicalSwarm {
         Ok(outputs)
     }
 
-    /// Calls a single agent with beautiful markdown formatting
-    async fn call_single_agent_with_formatting(&mut self, agent_name: &str, task: &str) -> Result<String> {
+    /// Calls a single agent with the given task (optimized for speed)
+    /// **Performance Optimized**: No automatic formatting for maximum speed
+    async fn call_single_agent_optimized(&self, agent_name: &str, task: &str) -> Result<String> {
         if self.verbose {
             info!(" Calling agent: {}", agent_name);
         }
@@ -979,13 +1039,6 @@ impl HierarchicalSwarm {
         } else {
             "No output received".to_string()
         };
-
-        // Render agent output with beautiful markdown formatting
-        self.formatter.render_agent_output(
-            agent_name,
-            &format!("# Task Execution\n\n## Assignment\n{}\n\n## Results\n{}", 
-                task, output_content)
-        );
         
         // Only add to conversation if verbose or interactive mode is enabled
         if self.verbose || self.interactive {
@@ -999,7 +1052,23 @@ impl HierarchicalSwarm {
         Ok(output_content)
     }
 
+    /// **OPTIONAL**: Calls a single agent with beautiful markdown formatting
+    /// Use this in examples/demos when you want beautiful visual output
+    async fn call_single_agent_with_formatter(&self, agent_name: &str, task: &str, formatter: &mut crate::utils::formatter::Formatter) -> Result<String> {
+        let output_content = self.call_single_agent_optimized(agent_name, task).await?;
+
+        // Render agent output with beautiful markdown formatting (optional)
+        formatter.render_agent_output(
+            agent_name,
+            &format!("# Task Execution\n\n## Assignment\n{}\n\n## Results\n{}", 
+                task, output_content)
+        );
+
+        Ok(output_content)
+    }
+
     /// Provides feedback from the director based on agent outputs
+    /// **Performance Optimized**: No automatic formatting for maximum speed
     async fn feedback_director(&self, outputs: &[String]) -> Result<Vec<String>> {
         if self.verbose {
             info!(" Generating director feedback");
@@ -1047,7 +1116,25 @@ impl HierarchicalSwarm {
         Ok(vec![feedback_content])
     }
 
+    /// **OPTIONAL**: Provides feedback from the director with beautiful markdown formatting
+    /// Use this in examples/demos when you want beautiful visual output
+    async fn feedback_director_with_formatter(&self, outputs: &[String], formatter: &mut crate::utils::formatter::Formatter) -> Result<Vec<String>> {
+        let feedback_content = self.feedback_director(outputs).await?;
+
+        // Render director feedback with beautiful markdown formatting (optional)
+        if let Some(content) = feedback_content.first() {
+            formatter.render_agent_output(
+                "Feedback Director",
+                &format!("# Performance Review\n\n## Agent Evaluation\n{}\n\n## Recommendations\nBased on the analysis above, focus on the suggested improvements for the next iteration.", 
+                    content)
+            );
+        }
+
+        Ok(feedback_content)
+    }
+
     /// Executes the hierarchical swarm for a list of tasks
+    /// **Performance Optimized**: No automatic formatting for maximum speed
     pub async fn batched_run(&self, tasks: &[String], img: Option<&str>) -> Result<Vec<Vec<String>>> {
         if self.verbose {
             info!(" Starting batched hierarchical swarm run: {}", self.name);
@@ -1071,6 +1158,7 @@ impl HierarchicalSwarm {
     }
 
     /// Executes the hierarchical swarm for a list of tasks in parallel
+    /// **Performance Optimized**: No automatic formatting for maximum speed
     pub async fn batched_run_parallel(&self, tasks: &[String], img: Option<&str>) -> Result<Vec<Vec<String>>> {
         if self.verbose {
             info!(" Starting parallel batched hierarchical swarm run: {}", self.name);
@@ -1370,6 +1458,73 @@ impl HierarchicalSwarm {
         }
 
         Ok(stats)
+    }
+
+    /// Find agent by name with flexible matching
+    fn find_agent_by_name(&self, agent_name: &str) -> Result<&AgentSpec> {
+        // Clean the agent name first
+        let clean_agent_name = agent_name
+            .replace("*", "")
+            .replace("#", "")
+            .replace("**", "")
+            .trim()
+            .to_string();
+        
+        // First try exact match with cleaned name
+        if let Some(agent) = self.agents.iter().find(|a| a.agent_name == clean_agent_name) {
+            return Ok(agent);
+        }
+
+        // Try partial matches
+        let agent_name_lower = clean_agent_name.to_lowercase();
+        
+        // Map common patterns to actual agent names
+        let agent_mappings = [
+            ("research", "Research Coordinator"),
+            ("coordinator", "Research Coordinator"),
+            ("technology", "Technology Researcher"),
+            ("tech", "Technology Researcher"),
+            ("economic", "Economic Analyst"),
+            ("economy", "Economic Analyst"),
+            ("ethics", "Ethics Specialist"),
+            ("ethical", "Ethics Specialist"),
+            ("future", "Future Trends Analyst"),
+            ("trends", "Future Trends Analyst"),
+            ("trend", "Future Trends Analyst"),
+            ("agent a", "Research Coordinator"),
+            ("agent b", "Technology Researcher"),
+            ("agent c", "Economic Analyst"),
+            ("agent d", "Ethics Specialist"),
+            ("agent e", "Future Trends Analyst"),
+            ("agent f", "Future Trends Analyst"), // Map Agent F to Future Trends Analyst
+        ];
+
+        for (keyword, actual_name) in &agent_mappings {
+            if agent_name_lower.contains(keyword) {
+                if let Some(agent) = self.agents.iter().find(|a| a.agent_name == *actual_name) {
+                    return Ok(agent);
+                }
+            }
+        }
+
+        // Try fuzzy matching on agent names
+        for agent in &self.agents {
+            let agent_name_lower_actual = agent.agent_name.to_lowercase();
+            if agent_name_lower.contains(&agent_name_lower_actual) || 
+               agent_name_lower_actual.contains(&agent_name_lower) {
+                return Ok(agent);
+            }
+        }
+
+        // If no match found, return error with available agents
+        let available_agents: Vec<String> = self.agents
+            .iter()
+            .map(|a| a.agent_name.clone())
+            .collect();
+        Err(HierarchicalSwarmError::AgentNotFound {
+            agent_name: clean_agent_name,
+            available_agents,
+        })
     }
 }
 
