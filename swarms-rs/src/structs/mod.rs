@@ -4,7 +4,7 @@ pub mod swarm;
 pub mod swarms_client;
 pub mod concurrent_workflow;
 pub mod sequential_workflow;
-pub mod hierarchical_swarm;
+pub mod hierarchical_swarm; // Was Temporarily commented out to focus on core functionality
 pub mod tool;
 pub mod cli;
 pub mod persistence;
