@@ -118,8 +118,6 @@ pub struct SwarmRouterCall {
 /// 4. Director evaluates results and issues new orders if needed (up to max_loops)
 /// 5. All context and conversation history is preserved throughout the process
 /// 
-/// **Markdown Output**: Enable beautiful console output with `.md(true)` in the builder.
-/// When enabled, all agent outputs are automatically rendered with beautiful formatting.
 #[derive(Clone)]
 pub struct HierarchicalSwarm {
     /// The name of the swarm
@@ -154,8 +152,6 @@ pub struct HierarchicalSwarm {
     pub dashboard_callback: Option<Arc<dyn Fn(DashboardUpdate) + Send + Sync>>,
     /// Whether to execute agents sequentially with memory (true) or in parallel (false)
     pub sequential_execution: bool,
-    /// Enable beautiful markdown output for all agents
-    pub markdown_enabled: bool,
     /// The Swarms API client
     client: Arc<SwarmsClient>,
     /// Conversation history (thread-safe mutable)
@@ -183,7 +179,6 @@ impl std::fmt::Debug for HierarchicalSwarm {
             .field("interactive", &self.interactive)
             .field("dashboard_callback", &"<callback>")
             .field("sequential_execution", &self.sequential_execution)
-            .field("markdown_enabled", &self.markdown_enabled)
             .field("client", &"<client>")
             .field("conversation", &"<conversation>")
             .field("execution_stats", &"<execution_stats>")
@@ -257,7 +252,6 @@ impl HierarchicalSwarm {
     /// Creates a new HierarchicalSwarm with the given parameters
     /// 
     /// **Performance Optimized**: Core swarm prioritizes speed over visual formatting.
-    /// For beautiful output, use the optional `render_with_formatter()` methods.
     pub fn new(
         name: String,
         description: String,
@@ -275,7 +269,6 @@ impl HierarchicalSwarm {
         interactive: bool,
         dashboard_callback: Option<Arc<dyn Fn(DashboardUpdate) + Send + Sync>>,
         sequential_execution: bool,
-        markdown_enabled: bool,
         client: SwarmsClient,
     ) -> Result<Self> {
         let swarm = Self {
@@ -295,7 +288,6 @@ impl HierarchicalSwarm {
             interactive,
             dashboard_callback,
             sequential_execution,
-            markdown_enabled,
             client: Arc::new(client),
             conversation: Arc::new(Mutex::new(Vec::new())),
             execution_stats: Arc::new(Mutex::new(ExecutionStats {
@@ -311,35 +303,6 @@ impl HierarchicalSwarm {
         Ok(swarm)
     }
 
-    /// Creates a formatter instance for optional beautiful output rendering.
-    /// 
-    /// **Usage**: Call this when you want beautiful markdown output in examples or demos.
-    /// The core swarm operations remain performance-optimized without automatic formatting.
-    /// 
-    /// # Examples
-    /// 
-    /// ```rust
-    /// // For performance-critical production use (default)
-    /// let results = swarm.run(task, None).await?;
-    /// 
-    /// // For beautiful demo output (optional)
-    /// let mut formatter = swarm.create_formatter();
-    /// let results = swarm.run_with_formatter(task, None, &mut formatter).await?;
-    /// ```
-    pub fn create_formatter(&self) -> crate::utils::formatter::Formatter {
-        crate::utils::formatter::Formatter::auto()
-    }
-
-    /// Automatically renders agent output with beautiful formatting when markdown is enabled
-    /// 
-    /// This method handles all the formatter creation and rendering automatically.
-    /// No manual formatter management needed!
-    fn auto_render_agent_output(&self, agent_name: &str, content: &str) {
-        if self.markdown_enabled {
-            let mut formatter = self.create_formatter();
-            formatter.render_agent_output(agent_name, content);
-        }
-    }
 
     /// Updates the dashboard with current execution status
     async fn update_dashboard(&self, update: DashboardUpdate) {
@@ -424,7 +387,6 @@ impl HierarchicalSwarm {
     }
 
     /// Runs a task through the director agent with the current conversation context
-    /// **Performance Optimized**: No automatic formatting for maximum speed
     pub async fn run_director(&self, task: &str, _img: Option<&str>) -> Result<SwarmSpecResponse> {
         if self.verbose {
             info!(" Running director with task: {}...", &task[..task.len().min(100)]);
@@ -506,19 +468,7 @@ impl HierarchicalSwarm {
 
         let parsed_response = self.parse_director_response(&response_content)?;
 
-        // **AUTOMATIC MARKDOWN RENDERING**: When enabled, automatically render beautiful director output
-        if self.markdown_enabled {
-            self.auto_render_agent_output(
-                "Director",
-                &format!("# Strategic Plan\n\n## Overview\n{}\n\n## Agent Assignments\n{}", 
-                    parsed_response.plan,
-                    parsed_response.orders.iter()
-                        .map(|order| format!("- **{}**: {}", order.agent_name, order.task))
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                )
-            );
-        }
+        // Markdown functionality removed from core hierarchical swarm
 
         if self.verbose {
             info!(" Director execution completed");
@@ -528,25 +478,6 @@ impl HierarchicalSwarm {
         Ok(parsed_response)
     }
 
-    /// **OPTIONAL**: Runs director with beautiful markdown output formatting
-    /// Use this in examples/demos when you want beautiful visual output
-    pub async fn run_director_with_formatter(&mut self, task: &str, _img: Option<&str>, formatter: &mut crate::utils::formatter::Formatter) -> Result<SwarmSpecResponse> {
-        let parsed_response = self.run_director(task, _img).await?;
-
-        // Render director output with beautiful markdown formatting (optional)
-        formatter.render_agent_output(
-            "Director", 
-            &format!("# Strategic Plan\n\n## Overview\n{}\n\n## Agent Assignments\n{}", 
-                parsed_response.plan,
-                parsed_response.orders.iter()
-                    .map(|order| format!("- **{}**: {}", order.agent_name, order.task))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            )
-        );
-
-        Ok(parsed_response)
-    }
 
     /// Parses the director's response to extract plan and orders
     fn parse_director_response(&self, output: &serde_json::Value) -> Result<SwarmSpecResponse> {
@@ -706,7 +637,6 @@ impl HierarchicalSwarm {
     /// 3. Agents execute tasks in parallel
     /// 4. Collect and report results
     /// 5. Director evaluates results
-    /// **Performance Optimized**: No automatic formatting for maximum speed
     pub async fn step(&self, task: &str, img: Option<&str>) -> Result<Vec<String>> {
         if self.verbose {
             info!("👣 Executing hierarchical step for task: {}...", &task[..task.len().min(100)]);
@@ -745,7 +675,6 @@ impl HierarchicalSwarm {
     }
 
     /// Executes the hierarchical swarm for a specified number of feedback loops
-    /// **Performance Optimized**: No automatic formatting for maximum speed
     pub async fn run(&self, task: &str, img: Option<&str>) -> Result<Vec<String>> {
         let mut current_loop = 0;
         let mut last_output = Vec::new();
@@ -839,14 +768,7 @@ impl HierarchicalSwarm {
             info!(" Total loops executed: {}", current_loop);
         }
 
-        // **AUTOMATIC MARKDOWN RENDERING**: When enabled, automatically render workflow completion
-        if self.markdown_enabled {
-            self.auto_render_agent_output(
-                "System",
-                &format!("# Workflow Completion\n\n## Summary\nHierarchical swarm '{}' completed successfully!\n\n## Execution Details\n- Total loops executed: {}\n- Total agents: {}\n- Final output generated: {} document(s)", 
-                    self.name, current_loop, self.agents.len(), last_output.len())
-            );
-        }
+        // Markdown functionality removed from core hierarchical swarm
 
         // Final dashboard update
         self.update_dashboard(DashboardUpdate {
@@ -862,25 +784,8 @@ impl HierarchicalSwarm {
         Ok(last_output)
     }
 
-    /// **OPTIONAL**: Executes the hierarchical swarm with beautiful markdown output formatting
-    /// Use this in examples/demos when you want beautiful visual output
-    pub async fn run_with_formatter(&self, task: &str, img: Option<&str>, formatter: &mut crate::utils::formatter::Formatter) -> Result<Vec<String>> {
-        // Render swarm initialization with beautiful formatting
-        formatter.render_section_header(&format!("Hierarchical Swarm: {}", self.name));
-        formatter.render_info(&format!("Task: {}", task));
-        formatter.render_info(&format!("Max loops: {}, Agents: {}", self.max_loops, self.agents.len()));
-
-        let results = self.run(task, img).await?;
-
-        // Render completion summary
-        formatter.render_workflow_completion(&format!("Hierarchical Swarm: {}", self.name));
-        formatter.render_success(&format!("Completed with {} agents", self.agents.len()));
-
-        Ok(results)
-    }
 
     /// Executes the hierarchical swarm with streaming output
-    /// **Performance Optimized**: No automatic formatting for maximum speed
     pub async fn run_stream(
         &self,
         task: &str,
@@ -952,7 +857,6 @@ impl HierarchicalSwarm {
     /// Executes the orders from the director's output (distribute to agents)
     /// This represents the "Distribute to Agents" and "Sequential Agent Execution" steps
     /// Each agent can build upon the previous agent's output
-    /// **Performance Optimized**: No automatic formatting for maximum speed
     async fn execute_orders(&self, orders: &[HierarchicalOrder]) -> Result<Vec<String>> {
         if self.verbose {
             info!("⚡ Distributing {} orders to specialized agents with memory", orders.len());
@@ -991,7 +895,6 @@ impl HierarchicalSwarm {
 
     /// Executes the orders from the director's output in parallel (without memory)
     /// This is the original parallel execution method
-    /// **Performance Optimized**: No automatic formatting for maximum speed
     async fn execute_orders_parallel(&self, orders: &[HierarchicalOrder]) -> Result<Vec<String>> {
         if self.verbose {
             info!(" Executing {} orders in parallel", orders.len());
@@ -1040,7 +943,6 @@ impl HierarchicalSwarm {
     }
 
     /// Calls a single agent with the given task (optimized for speed)
-    /// **Performance Optimized**: No automatic formatting for maximum speed
     async fn call_single_agent_optimized(&self, agent_name: &str, task: &str) -> Result<String> {
         if self.verbose {
             info!(" Calling agent: {}", agent_name);
@@ -1084,13 +986,11 @@ impl HierarchicalSwarm {
             self.add_to_conversation(agent_name, &output_content).await?;
         }
 
-        // **AUTOMATIC MARKDOWN RENDERING**: When enabled, automatically render beautiful output
+        // Render agent output with markdown if enabled
         if self.markdown_enabled {
-            self.auto_render_agent_output(
-                agent_name,
-                &format!("# Task Execution\n\n## Assignment\n{}\n\n## Results\n{}", 
-                    task, output_content)
-            );
+            if let Some(ref formatter) = self.formatter {
+                formatter.render_agent_output(agent_name, &output_content);
+            }
         }
 
         if self.verbose {
@@ -1100,23 +1000,8 @@ impl HierarchicalSwarm {
         Ok(output_content)
     }
 
-    /// **OPTIONAL**: Calls a single agent with beautiful markdown formatting
-    /// Use this in examples/demos when you want beautiful visual output
-    async fn call_single_agent_with_formatter(&self, agent_name: &str, task: &str, formatter: &mut crate::utils::formatter::Formatter) -> Result<String> {
-        let output_content = self.call_single_agent_optimized(agent_name, task).await?;
-
-        // Render agent output with beautiful markdown formatting (optional)
-        formatter.render_agent_output(
-            agent_name,
-            &format!("# Task Execution\n\n## Assignment\n{}\n\n## Results\n{}", 
-                task, output_content)
-        );
-
-        Ok(output_content)
-    }
 
     /// Provides feedback from the director based on agent outputs
-    /// **Performance Optimized**: No automatic formatting for maximum speed
     async fn feedback_director(&self, outputs: &[String]) -> Result<Vec<String>> {
         if self.verbose {
             info!(" Generating director feedback");
@@ -1157,14 +1042,7 @@ impl HierarchicalSwarm {
         };
         self.add_to_conversation(&self.director.agent_name, &feedback_content).await?;
 
-        // **AUTOMATIC MARKDOWN RENDERING**: When enabled, automatically render beautiful feedback output
-        if self.markdown_enabled {
-            self.auto_render_agent_output(
-                "Feedback Director",
-                &format!("# Performance Review\n\n## Agent Evaluation\n{}\n\n## Recommendations\nBased on the analysis above, focus on the suggested improvements for the next iteration.", 
-                    feedback_content)
-            );
-        }
+        // Markdown functionality removed from core hierarchical swarm
 
         if self.verbose {
             info!(" Director feedback generated successfully");
@@ -1173,25 +1051,8 @@ impl HierarchicalSwarm {
         Ok(vec![feedback_content])
     }
 
-    /// **OPTIONAL**: Provides feedback from the director with beautiful markdown formatting
-    /// Use this in examples/demos when you want beautiful visual output
-    async fn feedback_director_with_formatter(&self, outputs: &[String], formatter: &mut crate::utils::formatter::Formatter) -> Result<Vec<String>> {
-        let feedback_content = self.feedback_director(outputs).await?;
-
-        // Render director feedback with beautiful markdown formatting (optional)
-        if let Some(content) = feedback_content.first() {
-            formatter.render_agent_output(
-                "Feedback Director",
-                &format!("# Performance Review\n\n## Agent Evaluation\n{}\n\n## Recommendations\nBased on the analysis above, focus on the suggested improvements for the next iteration.", 
-                    content)
-            );
-        }
-
-        Ok(feedback_content)
-    }
 
     /// Executes the hierarchical swarm for a list of tasks
-    /// **Performance Optimized**: No automatic formatting for maximum speed
     pub async fn batched_run(&self, tasks: &[String], img: Option<&str>) -> Result<Vec<Vec<String>>> {
         if self.verbose {
             info!(" Starting batched hierarchical swarm run: {}", self.name);
@@ -1215,7 +1076,6 @@ impl HierarchicalSwarm {
     }
 
     /// Executes the hierarchical swarm for a list of tasks in parallel
-    /// **Performance Optimized**: No automatic formatting for maximum speed
     pub async fn batched_run_parallel(&self, tasks: &[String], img: Option<&str>) -> Result<Vec<Vec<String>>> {
         if self.verbose {
             info!(" Starting parallel batched hierarchical swarm run: {}", self.name);
@@ -1601,13 +1461,13 @@ pub struct HierarchicalSwarmBuilder {
     director_name: String,
     director_model_name: String,
     verbose: bool,
+    markdown_enabled: bool,
     add_collaboration_prompt: bool,
     planning_director_agent: Option<AgentSpec>,
     director_feedback_on: bool,
     interactive: bool,
     dashboard_callback: Option<Arc<dyn Fn(DashboardUpdate) + Send + Sync>>,
     sequential_execution: bool,
-    markdown_enabled: bool,
     client: Option<SwarmsClient>,
 }
 
@@ -1625,13 +1485,13 @@ impl HierarchicalSwarmBuilder {
             director_name: "Director".to_string(),
             director_model_name: "gpt-4o-mini".to_string(),
             verbose: false,
+            markdown_enabled: false,
             add_collaboration_prompt: true,
             planning_director_agent: None,
             director_feedback_on: true,
             interactive: false,
             dashboard_callback: None,
             sequential_execution: false, // Default to parallel execution for speed
-            markdown_enabled: false,
             client: None,
         }
     }
@@ -1696,6 +1556,12 @@ impl HierarchicalSwarmBuilder {
         self
     }
 
+    /// Enables markdown rendering for agent outputs
+    pub fn md(mut self, enabled: bool) -> Self {
+        self.markdown_enabled = enabled;
+        self
+    }
+
     /// Sets whether to add collaboration prompt
     pub fn add_collaboration_prompt(mut self, add: bool) -> Self {
         self.add_collaboration_prompt = add;
@@ -1735,20 +1601,7 @@ impl HierarchicalSwarmBuilder {
         self
     }
 
-    /// Enable beautiful markdown output for all agents
-    /// 
-    /// # Examples
-    /// 
-    /// ```rust
-    /// let swarm = HierarchicalSwarmBuilder::new()
-    ///     .name("My Swarm")
-    ///     .md(true)  // Enable beautiful markdown output
-    ///     .build()?;
-    /// ```
-    pub fn md(mut self, enabled: bool) -> Self {
-        self.markdown_enabled = enabled;
-        self
-    }
+
 
     /// Sets the Swarms API client
     pub fn client(mut self, client: SwarmsClient) -> Self {
@@ -1800,13 +1653,13 @@ impl HierarchicalSwarmBuilder {
             self.director_name,
             self.director_model_name,
             self.verbose,
+            self.markdown_enabled,
             self.add_collaboration_prompt,
             self.planning_director_agent,
             self.director_feedback_on,
             self.interactive,
             self.dashboard_callback,
             self.sequential_execution,
-            self.markdown_enabled,
             client,
         )
     }
