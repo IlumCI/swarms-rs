@@ -42,11 +42,11 @@ async fn main() -> Result<()> {
         .await
         .unwrap();
     // mcp-hn stdio server is called and give us the response
-    println!("STDIO MCP RESPONSE:\n{response}");
+    println!("STDIO MCP RESPONSE:\n{:?}", response);
 
     let response = agent.run("List ~ directory".to_owned()).await.unwrap();
     // example-sse-mcp-server is called and give us the response
-    println!("SSE MCP RESPONSE:\n{response}");
+    println!("SSE MCP RESPONSE:\n{:?}", response);
 
     Ok(())
 }

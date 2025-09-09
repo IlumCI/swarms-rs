@@ -1,8 +1,8 @@
+use colored::Colorize;
 use std::env;
 use std::sync::Once;
-use colored::Colorize;
 use swarms_rs::logging::init_logger;
-use swarms_rs::{log_agent, log_task, log_tool, log_memory, log_llm};
+use swarms_rs::{log_agent, log_llm, log_memory, log_task, log_tool};
 
 static INIT: Once = Once::new();
 

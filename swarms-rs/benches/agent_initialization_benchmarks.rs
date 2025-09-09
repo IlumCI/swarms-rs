@@ -1,11 +1,9 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main, Throughput, BenchmarkId};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use std::time::{Duration, Instant};
 use tokio::runtime::Runtime;
 
 use swarms_rs::{
-    agent::SwarmsAgentBuilder,
-    llm::provider::openai::OpenAI,
-    structs::agent::AgentConfig,
+    agent::SwarmsAgentBuilder, llm::provider::openai::OpenAI, structs::agent::AgentConfig,
 };
 
 fn run_async<F: std::future::Future<Output = T>, T>(future: F) -> T {
@@ -42,12 +40,12 @@ fn bench_single_agent_initialization(c: &mut Criterion) {
         b.iter(|| {
             let openai = create_mock_openai();
             let config = create_simple_config("BenchAgent");
-            
+
             let _agent = SwarmsAgentBuilder::new_with_model(openai)
                 .config(config)
                 .disable_task_complete_tool() // Disable tools for faster init
                 .build();
-            
+
             black_box(_agent);
         });
     });
@@ -67,19 +65,19 @@ fn bench_batch_agent_initialization(c: &mut Criterion) {
             |b, &batch_size| {
                 b.iter(|| {
                     let mut agents = Vec::with_capacity(batch_size);
-                    
+
                     for i in 0..batch_size {
                         let openai = create_mock_openai();
                         let config = create_simple_config(&format!("Agent{}", i));
-                        
+
                         let agent = SwarmsAgentBuilder::new_with_model(openai)
                             .config(config)
                             .disable_task_complete_tool()
                             .build();
-                        
+
                         agents.push(agent);
                     }
-                    
+
                     black_box(agents);
                 });
             },
@@ -92,38 +90,41 @@ fn bench_batch_agent_initialization(c: &mut Criterion) {
 /// Benchmark how many agents can be initialized in one minute
 fn bench_agents_per_minute(c: &mut Criterion) {
     let mut group = c.benchmark_group("agents_per_minute");
-    
+
     // Set a longer measurement time for this benchmark
     group.measurement_time(Duration::from_secs(60));
     group.sample_size(10); // Fewer samples since each takes a minute
-    
+
     group.bench_function("max_agents_in_60_seconds", |b| {
         b.iter_custom(|iters| {
             let start = Instant::now();
             let mut total_agents = 0;
-            
+
             for _ in 0..iters {
                 let init_start = Instant::now();
                 let mut count = 0;
-                
+
                 // Initialize agents for 60 seconds
                 while init_start.elapsed() < Duration::from_secs(60) {
                     let openai = create_mock_openai();
                     let config = create_simple_config(&format!("SpeedAgent{}", count));
-                    
+
                     let _agent = SwarmsAgentBuilder::new_with_model(openai)
                         .config(config)
                         .disable_task_complete_tool()
                         .build();
-                    
+
                     count += 1;
                     black_box(_agent);
                 }
-                
+
                 total_agents += count;
-                println!("Initialized {} agents in 60 seconds (iteration {})", count, total_agents);
+                println!(
+                    "Initialized {} agents in 60 seconds (iteration {})",
+                    count, total_agents
+                );
             }
-            
+
             start.elapsed()
         });
     });
@@ -147,8 +148,9 @@ fn bench_concurrent_agent_initialization(c: &mut Criterion) {
                             .map(|i| {
                                 tokio::spawn(async move {
                                     let openai = create_mock_openai();
-                                    let config = create_simple_config(&format!("ConcurrentAgent{}", i));
-                                    
+                                    let config =
+                                        create_simple_config(&format!("ConcurrentAgent{}", i));
+
                                     SwarmsAgentBuilder::new_with_model(openai)
                                         .config(config)
                                         .disable_task_complete_tool()
@@ -184,12 +186,12 @@ fn bench_different_configurations(c: &mut Criterion) {
                 .build()
                 .as_ref()
                 .clone();
-            
+
             let _agent = SwarmsAgentBuilder::new_with_model(openai)
                 .config(config)
                 .disable_task_complete_tool()
                 .build();
-            
+
             black_box(_agent);
         });
     });
@@ -208,11 +210,11 @@ fn bench_different_configurations(c: &mut Criterion) {
                 .build()
                 .as_ref()
                 .clone();
-            
+
             let _agent = SwarmsAgentBuilder::new_with_model(openai)
                 .config(config)
                 .build(); // Keep task evaluator tool for full config
-            
+
             black_box(_agent);
         });
     });
@@ -223,27 +225,31 @@ fn bench_different_configurations(c: &mut Criterion) {
 /// Quick test to measure initialization rate
 fn quick_initialization_rate_test() {
     println!("\n=== Quick Agent Initialization Rate Test ===");
-    
+
     let start = Instant::now();
     let mut count = 0;
     let test_duration = Duration::from_secs(10); // 10 second test
-    
+
     while start.elapsed() < test_duration {
         let openai = create_mock_openai();
         let config = create_simple_config(&format!("QuickTest{}", count));
-        
+
         let _agent = SwarmsAgentBuilder::new_with_model(openai)
             .config(config)
             .disable_task_complete_tool()
             .build();
-        
+
         count += 1;
     }
-    
+
     let elapsed = start.elapsed();
     let rate = count as f64 / elapsed.as_secs_f64();
-    
-    println!("Initialized {} agents in {:.2}s", count, elapsed.as_secs_f64());
+
+    println!(
+        "Initialized {} agents in {:.2}s",
+        count,
+        elapsed.as_secs_f64()
+    );
     println!("Rate: {:.2} agents/second", rate);
     println!("Estimated agents per minute: {:.0}", rate * 60.0);
     println!("=========================================\n");

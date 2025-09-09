@@ -26,10 +26,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .user_name("TestUser")
         .description("An agent to demonstrate comprehensive logging")
         .temperature(0.7)
-        .max_loops(2)
+        .max_loops(1)
         .max_tokens(100)
         .enable_plan(Some("Plan this task step by step".to_string()))
-        .enable_autosave()
         .retry_attempts(1)
         .build();
 
@@ -59,10 +58,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match agent.run(task.to_string()).await {
         Ok(result) => {
             println!("✅ Task completed successfully!");
-            println!("📋 Result: {}", result);
+            println!("📋 Result: {:?}", result);
         },
         Err(e) => {
-            println!("❌ Task failed: {}", e);
+            println!("❌ Task failed: {:?}", e);
         },
     }
 
