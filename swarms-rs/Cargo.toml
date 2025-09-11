@@ -1,9 +1,9 @@
 [package]
 name = "swarms-rs"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
-description = "The Enterprise-Grade Production-Ready Multi-Agent Orchestration Framework in Rust"
-authors = ["Kye Gomez <kye@kyegomez.com>"]
+description = "The Bleeding-Edge Production-Ready Multi-Agent Orchestration Framework in Rust"
+authors = ["Kye Gomez <kye@swarms.world>"]
 license = "Apache-2.0"
 repository = "https://github.com/The-Swarm-Corporation/swarms-rs"
 documentation = "https://docs.rs/swarms-rs"
@@ -46,6 +46,11 @@ rmcp = { version = "0.1.5", features = [
     "transport-sse",
     "transport-child-process",
 ] }
+hyper = { version = "1.0", features = ["http1", "client", "server"] }
+hyper-util = { version = "0.1", features = ["client", "client-legacy", "http1"] }
+hyper-tls = "0.6"
+bytes = "1.0"
+http-body-util = "0.1"
 
 # macro
 swarms-macro = { version = "0.1.0", path = "../swarms-macro" }
@@ -87,3 +92,7 @@ path = "examples/api_client_examples/error_handling.rs"
 [[example]]
 name = "logging_example"
 path = "examples/logging_example.rs"
+
+[[example]]
+name = "anthropic_claude_agent"
+path = "examples/anthropic_claude_agent.rs"

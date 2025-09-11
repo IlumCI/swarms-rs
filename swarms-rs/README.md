@@ -60,8 +60,8 @@
 ## 🌐 Available Languages
 
 - [English](README.md)
-- [中文](README.zh.md)
-- [日本語](README.ja.md)
+- [中文](docs/README.zh.md)
+- [日本語](docs/README.ja.md)
 
 ## Key Benefits
 
@@ -82,79 +82,18 @@
 
 - Rust (latest stable version recommended)
 - Cargo package manager
-- An API key for your LLM provider (OpenAI, DeepSeek, etc.)
+- An API key for your LLM provider (OpenAI, DeepSeek, Anthropic etc.)
 
 
 ----------
 
 ### Installation
 
-There are several ways to install and use `swarms-rs`:
+```bash
+# Add the latest version to your project
+cargo add swarms-rs
+```
 
-1. **Automatic Latest Version (Recommended)**
-   To always get the latest published version automatically:
-
-   ```bash
-   # Add the latest version to your project
-   cargo add swarms-rs
-   
-   # Or install as a binary with latest version
-   cargo install swarms-rs
-   ```
-
-2. **Using Cargo.toml with Version Ranges**
-   Add `swarms-rs` to your `Cargo.toml` with automatic updates:
-
-   ```toml
-   [dependencies]
-   # Automatically get compatible updates (e.g., 0.1.8 -> 0.1.9, but not 0.2.0)
-   swarms-rs = "^0.1.8"
-   
-   # Or use wildcard for patch updates only (e.g., 0.1.8 -> 0.1.9)
-   swarms-rs = "~0.1.8"
-   
-   # Or use latest from crates.io (not recommended for production)
-   swarms-rs = "*"
-   ```
-
-3. **Latest from GitHub (Development)**
-   Always get the cutting-edge version from GitHub:
-
-   ```toml
-   [dependencies]
-   swarms-rs = { git = "https://github.com/The-Swarm-Corporation/swarms-rs", branch = "main" }
-   ```
-
-4. **Manual Version Specification**
-   Pin to a specific version:
-
-   ```toml
-   [dependencies]
-   swarms-rs = "0.1.8"  # Exact version
-   ```
-
-5. **From Source**
-   Clone and build from source:
-
-   ```bash
-   git clone https://github.com/The-Swarm-Corporation/swarms-rs
-   cd swarms-rs
-   cargo build --release
-   ```
-
-6. **Check for Updates**
-   To check for and update to the latest version:
-
-   ```bash
-   # Check for outdated dependencies
-   cargo outdated
-   
-   # Update all dependencies to latest compatible versions
-   cargo update
-   
-   # Update to latest version (may require Cargo.toml changes)
-   cargo upgrade  # Requires cargo-edit: cargo install cargo-edit
-   ```
 
 -------
 
