@@ -1,9 +1,9 @@
 //! Tests for Tool Module
 //! This module tests the tool traits and tool implementations
 
-use swarms_rs::structs::tool::{Tool, ToolDyn, ToolError};
 use serde::{Deserialize, Serialize};
 use swarms_rs::llm::request::ToolDefinition;
+use swarms_rs::structs::tool::{Tool, ToolDyn, ToolError};
 
 // Mock tool for testing
 #[derive(Debug, Clone)]
@@ -86,10 +86,10 @@ impl Tool for MockTool {
 #[tokio::test]
 async fn test_tool_trait_basic_functionality() {
     let tool = MockTool::new("test_tool");
-    
+
     assert_eq!(Tool::name(&tool), "test_tool");
     assert_eq!(MockTool::NAME, "mock_tool");
-    
+
     let definition = Tool::definition(&tool);
     assert_eq!(definition.name, "test_tool");
     assert!(!definition.description.is_empty());
@@ -102,10 +102,10 @@ async fn test_tool_call_success() {
     let args = MockArgs {
         input: "test input".to_string(),
     };
-    
+
     let result = Tool::call(&tool, args).await;
     assert!(result.is_ok());
-    
+
     let output = result.unwrap();
     assert_eq!(output.result, "Processed: test input");
 }
@@ -116,10 +116,10 @@ async fn test_tool_call_error() {
     let args = MockArgs {
         input: "test input".to_string(),
     };
-    
+
     let result = Tool::call(&tool, args).await;
     assert!(result.is_err());
-    
+
     let error = result.unwrap_err();
     assert_eq!(error.to_string(), "Mock tool error: Simulated error");
 }
@@ -127,15 +127,15 @@ async fn test_tool_call_error() {
 #[tokio::test]
 async fn test_tool_dyn_trait_success() {
     let tool: Box<dyn ToolDyn> = Box::new(MockTool::new("dyn_tool"));
-    
+
     assert_eq!(tool.name(), "dyn_tool");
-    
+
     let definition = tool.definition();
     assert_eq!(definition.name, "dyn_tool");
-    
+
     let args_json = r#"{"input": "dynamic test"}"#;
     let result = tool.call(args_json.to_string()).await;
-    
+
     assert!(result.is_ok());
     let output_json = result.unwrap();
     let output: MockOutput = serde_json::from_str(&output_json).unwrap();
@@ -145,10 +145,10 @@ async fn test_tool_dyn_trait_success() {
 #[tokio::test]
 async fn test_tool_dyn_trait_invalid_json() {
     let tool: Box<dyn ToolDyn> = Box::new(MockTool::new("json_tool"));
-    
+
     let invalid_json = "invalid json";
     let result = tool.call(invalid_json.to_string()).await;
-    
+
     assert!(result.is_err());
     assert!(matches!(result.unwrap_err(), ToolError::JsonError(_)));
 }
@@ -156,10 +156,10 @@ async fn test_tool_dyn_trait_invalid_json() {
 #[tokio::test]
 async fn test_tool_dyn_trait_tool_error() {
     let tool: Box<dyn ToolDyn> = Box::new(MockTool::new_with_error("error_dyn_tool"));
-    
+
     let args_json = r#"{"input": "error test"}"#;
     let result = tool.call(args_json.to_string()).await;
-    
+
     assert!(result.is_err());
     assert!(matches!(result.unwrap_err(), ToolError::ToolCallError(_)));
 }
@@ -170,7 +170,7 @@ fn test_tool_error_types() {
     let json_error = serde_json::from_str::<serde_json::Value>("invalid json").unwrap_err();
     let tool_error = ToolError::JsonError(json_error);
     assert!(matches!(tool_error, ToolError::JsonError(_)));
-    
+
     // Test ToolCallError
     let custom_error = MockToolError::TestError("custom error".to_string());
     let boxed_error: Box<dyn core::error::Error + Send + Sync> = Box::new(custom_error);
@@ -183,7 +183,7 @@ fn test_tool_error_display() {
     let json_error = serde_json::from_str::<serde_json::Value>("invalid json").unwrap_err();
     let tool_error = ToolError::JsonError(json_error);
     assert!(tool_error.to_string().starts_with("JsonError:"));
-    
+
     let custom_error = MockToolError::TestError("test message".to_string());
     let boxed_error: Box<dyn core::error::Error + Send + Sync> = Box::new(custom_error);
     let tool_error = ToolError::ToolCallError(boxed_error);
@@ -202,7 +202,7 @@ fn test_tool_definition_creation() {
             }
         }),
     };
-    
+
     assert_eq!(definition.name, "test_definition");
     assert!(!definition.description.is_empty());
     assert!(definition.parameters.is_object());

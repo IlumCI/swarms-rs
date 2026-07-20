@@ -321,7 +321,10 @@ pub fn tool_impl(attr: TokenStream, item: TokenStream) -> TokenStream {
                 if let Type::Path(type_path) = &**ty {
                     let segment = &type_path.path.segments[0];
                     if segment.ident != "Option" {
-                        panic!("Argument '{}' is marked as optional (required = false) but is not an Option type", arg.name);
+                        panic!(
+                            "Argument '{}' is marked as optional (required = false) but is not an Option type",
+                            arg.name
+                        );
                     }
                 }
             }

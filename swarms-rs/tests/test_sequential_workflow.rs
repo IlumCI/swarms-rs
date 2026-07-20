@@ -1,6 +1,6 @@
-use swarms_rs::structs::sequential_workflow::{SequentialWorkflow, SequentialWorkflowError};
-use swarms_rs::structs::agent::{Agent, AgentError};
 use futures::future::{BoxFuture, ready};
+use swarms_rs::structs::agent::{Agent, AgentError};
+use swarms_rs::structs::sequential_workflow::{SequentialWorkflow, SequentialWorkflowError};
 
 // Mock Agent for testing
 #[derive(Clone)]
@@ -21,7 +21,7 @@ impl MockAgent {
 
     fn new_failing(name: &str, response: &str) -> Self {
         Self {
-            name: name.to_string(), 
+            name: name.to_string(),
             response: response.to_string(),
             should_fail: true,
         }
@@ -37,7 +37,10 @@ impl Agent for MockAgent {
         }
     }
 
-    fn run_multiple_tasks(&mut self, _tasks: Vec<String>) -> BoxFuture<Result<Vec<String>, AgentError>> {
+    fn run_multiple_tasks(
+        &mut self,
+        _tasks: Vec<String>,
+    ) -> BoxFuture<Result<Vec<String>, AgentError>> {
         Box::pin(ready(Ok(vec![self.response.clone()])))
     }
 
@@ -94,7 +97,7 @@ async fn test_sequential_workflow_builder() {
 async fn test_sequential_workflow_builder_multiple_agents() {
     let agent1 = MockAgent::new("agent1", "response1");
     let agent2 = MockAgent::new("agent2", "response2");
-    
+
     let workflow = SequentialWorkflow::builder()
         .name("MultiAgentWorkflow")
         .add_agent(Box::new(agent1))
@@ -112,7 +115,7 @@ async fn test_sequential_workflow_builder_agents_vec() {
         Box::new(MockAgent::new("agent1", "response1")),
         Box::new(MockAgent::new("agent2", "response2")),
     ];
-    
+
     let workflow = SequentialWorkflow::builder()
         .name("VecAgentsWorkflow")
         .agents(agents)
@@ -166,7 +169,7 @@ async fn test_sequential_workflow_run_successful() {
 
     let result = workflow.run("test task").await;
     assert!(result.is_ok());
-    
+
     let conversation = result.unwrap();
     assert!(conversation.history.len() > 0);
 }
@@ -181,7 +184,10 @@ async fn test_sequential_workflow_run_with_failure() {
 
     let result = workflow.run("test task").await;
     assert!(result.is_err());
-    assert!(matches!(result, Err(SequentialWorkflowError::AgentError(_))));
+    assert!(matches!(
+        result,
+        Err(SequentialWorkflowError::AgentError(_))
+    ));
 }
 
 #[tokio::test]
@@ -193,7 +199,7 @@ async fn test_sequential_workflow_single_agent() {
 
     let result = workflow.run("single task").await;
     assert!(result.is_ok());
-    
+
     let conversation = result.unwrap();
     assert!(conversation.history.len() >= 2); // User message + Agent response
 }
@@ -214,21 +220,27 @@ fn test_sequential_workflow_error_types() {
     // Test different error types
     let agent_error = AgentError::NoChoiceFound;
     let workflow_error = SequentialWorkflowError::AgentError(agent_error);
-    assert!(matches!(workflow_error, SequentialWorkflowError::AgentError(_)));
+    assert!(matches!(
+        workflow_error,
+        SequentialWorkflowError::AgentError(_)
+    ));
 
     let workflow_error = SequentialWorkflowError::NoAgents;
     assert!(matches!(workflow_error, SequentialWorkflowError::NoAgents));
 
     let json_error = serde_json::from_str::<serde_json::Value>("invalid json").unwrap_err();
     let workflow_error = SequentialWorkflowError::JsonError(json_error);
-    assert!(matches!(workflow_error, SequentialWorkflowError::JsonError(_)));
+    assert!(matches!(
+        workflow_error,
+        SequentialWorkflowError::JsonError(_)
+    ));
 }
 
 #[test]
 fn test_sequential_workflow_error_display() {
     let error = SequentialWorkflowError::NoAgents;
     assert!(error.to_string().contains("No agents provided"));
-    
+
     let error = SequentialWorkflowError::NoTasks;
     assert!(error.to_string().contains("No tasks provided"));
 }
@@ -237,14 +249,20 @@ fn test_sequential_workflow_error_display() {
 fn test_sequential_workflow_error_from_agent_error() {
     let agent_error = AgentError::NoChoiceFound;
     let workflow_error: SequentialWorkflowError = agent_error.into();
-    assert!(matches!(workflow_error, SequentialWorkflowError::AgentError(_)));
+    assert!(matches!(
+        workflow_error,
+        SequentialWorkflowError::AgentError(_)
+    ));
 }
 
 #[test]
 fn test_sequential_workflow_error_from_json_error() {
     let json_error = serde_json::from_str::<serde_json::Value>("invalid").unwrap_err();
     let workflow_error: SequentialWorkflowError = json_error.into();
-    assert!(matches!(workflow_error, SequentialWorkflowError::JsonError(_)));
+    assert!(matches!(
+        workflow_error,
+        SequentialWorkflowError::JsonError(_)
+    ));
 }
 
 #[tokio::test]
@@ -294,6 +312,133 @@ async fn test_sequential_workflow_builder_chaining() {
         .build();
 
     // Test that the chained workflow works properly
+    let result = workflow.run("test task").await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_sequential_workflow_conversation_history() {
+    let workflow = SequentialWorkflow::builder()
+        .name("HistoryWorkflow")
+        .add_agent(Box::new(MockAgent::new("Agent1", "First response")))
+        .add_agent(Box::new(MockAgent::new("Agent2", "Second response")))
+        .build();
+
+    let result = workflow.run("test task").await;
+    assert!(result.is_ok());
+
+    let conversation = result.unwrap();
+    // Should have at least: user message + agent1 response + agent2 response
+    assert!(conversation.history.len() >= 3);
+}
+
+#[tokio::test]
+async fn test_sequential_workflow_many_agents() {
+    let mut builder = SequentialWorkflow::builder().name("ManyAgentsWorkflow");
+
+    // Add 10 agents
+    for i in 0..10 {
+        builder = builder.add_agent(Box::new(MockAgent::new(
+            &format!("Agent{}", i),
+            &format!("Response{}", i),
+        )));
+    }
+
+    let workflow = builder.build();
+    let result = workflow.run("test task").await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_sequential_workflow_with_metadata_dir() {
+    use tempfile::tempdir;
+
+    let temp_dir = tempdir().unwrap();
+    let metadata_path = temp_dir.path().to_str().unwrap();
+
+    let workflow = SequentialWorkflow::builder()
+        .name("MetadataWorkflow")
+        .metadata_output_dir(metadata_path)
+        .add_agent(Box::new(MockAgent::new("Agent1", "Response1")))
+        .build();
+
+    let result = workflow.run("test task").await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_sequential_workflow_error_propagation() {
+    let workflow = SequentialWorkflow::builder()
+        .name("ErrorPropagationWorkflow")
+        .add_agent(Box::new(MockAgent::new("Agent1", "Success")))
+        .add_agent(Box::new(MockAgent::new_failing("Agent2", "Fail")))
+        .add_agent(Box::new(MockAgent::new("Agent3", "Never reached")))
+        .build();
+
+    let result = workflow.run("test task").await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_sequential_workflow_first_agent_fails() {
+    let workflow = SequentialWorkflow::builder()
+        .name("FirstAgentFailsWorkflow")
+        .add_agent(Box::new(MockAgent::new_failing("Agent1", "Fail")))
+        .add_agent(Box::new(MockAgent::new("Agent2", "Never reached")))
+        .build();
+
+    let result = workflow.run("test task").await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_sequential_workflow_last_agent_fails() {
+    let workflow = SequentialWorkflow::builder()
+        .name("LastAgentFailsWorkflow")
+        .add_agent(Box::new(MockAgent::new("Agent1", "Success")))
+        .add_agent(Box::new(MockAgent::new("Agent2", "Success")))
+        .add_agent(Box::new(MockAgent::new_failing("Agent3", "Fail")))
+        .build();
+
+    let result = workflow.run("test task").await;
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_sequential_workflow_complex_task() {
+    let complex_task = format!(
+        "Analyze the following data:\n{}\n\nProvide insights and recommendations.",
+        "x".repeat(5000)
+    );
+
+    let workflow = SequentialWorkflow::builder()
+        .name("ComplexTaskWorkflow")
+        .add_agent(Box::new(MockAgent::new("Analyzer", "Analysis complete")))
+        .build();
+
+    let result = workflow.run(complex_task).await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_sequential_workflow_empty_description() {
+    let workflow = SequentialWorkflow::builder()
+        .name("EmptyDescWorkflow")
+        .description("")
+        .add_agent(Box::new(MockAgent::new("Agent1", "Response1")))
+        .build();
+
+    let result = workflow.run("test task").await;
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_sequential_workflow_empty_name() {
+    let workflow = SequentialWorkflow::builder()
+        .name("")
+        .add_agent(Box::new(MockAgent::new("Agent1", "Response1")))
+        .build();
+
     let result = workflow.run("test task").await;
     assert!(result.is_ok());
 }

@@ -1,11 +1,11 @@
 //! Tests for Concurrent Workflow
 //! This module tests the concurrent workflow builder and concurrent workflow struct
 
+use futures::future::BoxFuture;
 use swarms_rs::structs::{
     agent::{Agent, AgentError},
     concurrent_workflow::{ConcurrentWorkflow, ConcurrentWorkflowError},
 };
-use futures::future::BoxFuture;
 use tempfile::tempdir;
 
 // Mock agent for testing
@@ -158,7 +158,10 @@ async fn test_concurrent_workflow_run_empty_task() {
         .build();
 
     let result = workflow.run("").await;
-    assert!(matches!(result, Err(ConcurrentWorkflowError::EmptyTasksOrAgents)));
+    assert!(matches!(
+        result,
+        Err(ConcurrentWorkflowError::EmptyTasksOrAgents)
+    ));
 }
 
 #[tokio::test]
@@ -168,7 +171,10 @@ async fn test_concurrent_workflow_run_no_agents() {
         .build();
 
     let result = workflow.run("test task").await;
-    assert!(matches!(result, Err(ConcurrentWorkflowError::EmptyTasksOrAgents)));
+    assert!(matches!(
+        result,
+        Err(ConcurrentWorkflowError::EmptyTasksOrAgents)
+    ));
 }
 
 #[tokio::test]
@@ -179,14 +185,17 @@ async fn test_concurrent_workflow_run_duplicate_task() {
         .build();
 
     let task = "duplicate task";
-    
+
     // First run should succeed
     let result1 = workflow.run(task).await;
     assert!(result1.is_ok());
 
     // Second run with same task should fail
     let result2 = workflow.run(task).await;
-    assert!(matches!(result2, Err(ConcurrentWorkflowError::TaskAlreadyExists)));
+    assert!(matches!(
+        result2,
+        Err(ConcurrentWorkflowError::TaskAlreadyExists)
+    ));
 }
 
 #[tokio::test]
@@ -199,7 +208,7 @@ async fn test_concurrent_workflow_run_successful() {
 
     let result = workflow.run("test task").await;
     assert!(result.is_ok());
-    
+
     let conversation = result.unwrap();
     // The conversation should contain the user message and agent responses
     assert!(!conversation.history.is_empty());
@@ -210,17 +219,29 @@ fn test_concurrent_workflow_error_types() {
     // Test different error types
     let agent_error = AgentError::NoChoiceFound;
     let workflow_error = ConcurrentWorkflowError::AgentError(agent_error);
-    assert!(matches!(workflow_error, ConcurrentWorkflowError::AgentError(_)));
+    assert!(matches!(
+        workflow_error,
+        ConcurrentWorkflowError::AgentError(_)
+    ));
 
     let workflow_error = ConcurrentWorkflowError::EmptyTasksOrAgents;
-    assert!(matches!(workflow_error, ConcurrentWorkflowError::EmptyTasksOrAgents));
+    assert!(matches!(
+        workflow_error,
+        ConcurrentWorkflowError::EmptyTasksOrAgents
+    ));
 
     let workflow_error = ConcurrentWorkflowError::TaskAlreadyExists;
-    assert!(matches!(workflow_error, ConcurrentWorkflowError::TaskAlreadyExists));
+    assert!(matches!(
+        workflow_error,
+        ConcurrentWorkflowError::TaskAlreadyExists
+    ));
 
     let json_error = serde_json::from_str::<serde_json::Value>("invalid json").unwrap_err();
     let workflow_error = ConcurrentWorkflowError::JsonError(json_error);
-    assert!(matches!(workflow_error, ConcurrentWorkflowError::JsonError(_)));
+    assert!(matches!(
+        workflow_error,
+        ConcurrentWorkflowError::JsonError(_)
+    ));
 }
 
 #[test]
@@ -266,7 +287,7 @@ fn test_concurrent_workflow_builder_multiple_add_agent_calls() {
 #[tokio::test]
 async fn test_concurrent_workflow_run_with_long_task() {
     let long_task = "a".repeat(1000); // Very long task string
-    
+
     let workflow = ConcurrentWorkflow::builder()
         .name("LongTaskWorkflow")
         .add_agent(Box::new(MockAgent::new("Agent1", "Response to long task")))
@@ -279,10 +300,13 @@ async fn test_concurrent_workflow_run_with_long_task() {
 #[tokio::test]
 async fn test_concurrent_workflow_run_with_special_characters() {
     let special_task = "Task with special chars: 你好, émoji 🚀, and symbols @#$%";
-    
+
     let workflow = ConcurrentWorkflow::builder()
         .name("SpecialCharsWorkflow")
-        .add_agent(Box::new(MockAgent::new("Agent1", "Response to special chars")))
+        .add_agent(Box::new(MockAgent::new(
+            "Agent1",
+            "Response to special chars",
+        )))
         .build();
 
     let result = workflow.run(special_task).await;

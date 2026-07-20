@@ -102,12 +102,18 @@ cargo add swarms-rs
 Create a `.env` file in your project root with your API credentials:
 
 ```
+RUST_LOG=debug
+
+SWARMS_LOG_LEVEL=DEBUG 
+
 OPENAI_API_KEY=your_openai_key_here
 OPENAI_BASE_URL=https://api.openai.com/v1
 
 # Or for DeepSeek
-DEEPSEEK_API_KEY=your_deepseek_key_here
-DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+DEEPSEEK_API_KEY="your_deepseek_key_here"
+DEEPSEEK_BASE_URL="https://api.deepseek.com/v1"
+
+ANTHROPIC_API_KEY=""
 ```
 
 ------------

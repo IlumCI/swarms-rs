@@ -1,6 +1,5 @@
 use crate::structs::persistence;
 use crate::structs::tool::ToolError;
-use colored::*;
 use futures::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -46,7 +45,7 @@ impl AgentConfigBuilder {
     pub fn agent_name(mut self, name: impl Into<String>) -> Self {
         let name = name.into();
         if self.config.verbose {
-            log::debug!("🏷️  Setting agent name: {}", name.bright_cyan().bold());
+            log::debug!("🏷️  Setting agent name: {}", name);
         }
         Arc::make_mut(&mut self.config).name = name;
         self
@@ -122,16 +121,21 @@ impl AgentConfigBuilder {
         self
     }
 
+    pub fn pretty_print_on(mut self, pretty_print_on: bool) -> Self {
+        Arc::make_mut(&mut self.config).pretty_print_on = pretty_print_on;
+        self
+    }
+
     pub fn build(self) -> Arc<AgentConfig> {
         let config = &self.config;
         if config.verbose {
             log::info!(
                 "🎯 Agent configuration built: {} (ID: {}) - Max loops: {}, Temperature: {}, Max tokens: {}",
-                config.name.bright_cyan().bold(),
-                config.id.bright_yellow(),
-                config.max_loops.to_string().bright_green(),
-                config.temperature.to_string().bright_blue(),
-                config.max_tokens.to_string().bright_purple()
+                config.name,
+                config.id,
+                config.max_loops,
+                config.temperature,
+                config.max_tokens
             );
         }
         self.config
@@ -159,6 +163,7 @@ pub struct AgentConfig {
     pub task_evaluator_tool_enabled: bool,
     pub concurrent_tool_call_enabled: bool,
     pub verbose: bool,
+    pub pretty_print_on: bool,
     #[serde(skip)]
     pub response_cache: HashMap<String, String>,
 }
@@ -233,14 +238,12 @@ impl Default for AgentConfig {
             task_evaluator_tool_enabled: true,
             concurrent_tool_call_enabled: true,
             verbose: false,                              // Default to verbose logging
+            pretty_print_on: false,                      // Default to no pretty printing
             response_cache: HashMap::with_capacity(100), // Pre-allocate cache capacity
         };
 
         if config.verbose && log::log_enabled!(log::Level::Debug) {
-            log::debug!(
-                "🆕 Creating default agent configuration with ID: {}",
-                id.bright_yellow()
-            );
+            log::debug!("🆕 Creating default agent configuration with ID: {}", id);
         }
 
         config

@@ -187,10 +187,12 @@ impl From<async_openai::error::OpenAIError> for CompletionError {
             async_openai::error::OpenAIError::ApiError(api_error) => {
                 CompletionError::Provider(api_error.to_string())
             },
-            async_openai::error::OpenAIError::JSONDeserialize(e) => e.into(),
+            async_openai::error::OpenAIError::JSONDeserialize(e, _) => e.into(),
             async_openai::error::OpenAIError::FileSaveError(e) => CompletionError::Other(e),
             async_openai::error::OpenAIError::FileReadError(e) => CompletionError::Other(e),
-            async_openai::error::OpenAIError::StreamError(e) => CompletionError::Other(e),
+            async_openai::error::OpenAIError::StreamError(e) => {
+                CompletionError::Other(e.to_string())
+            },
             async_openai::error::OpenAIError::InvalidArgument(e) => {
                 CompletionError::Request(e.into())
             },

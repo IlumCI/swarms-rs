@@ -1,4 +1,3 @@
-use colored::*;
 use env_logger::{Builder, Target, WriteStyle};
 use log::{Level, LevelFilter};
 use std::env;
@@ -33,32 +32,29 @@ pub fn init_logger() {
         .write_style(WriteStyle::Always)
         .filter_level(level_filter)
         .format(|buf, record| {
-            let level_color = match record.level() {
-                Level::Error => "ERROR".red().bold(),
-                Level::Warn => "WARN".yellow().bold(),
-                Level::Info => "INFO".green().bold(),
-                Level::Debug => "DEBUG".blue().bold(),
-                Level::Trace => "TRACE".purple().bold(),
+            let level_str = match record.level() {
+                Level::Error => "ERROR",
+                Level::Warn => "WARN",
+                Level::Info => "INFO",
+                Level::Debug => "DEBUG",
+                Level::Trace => "TRACE",
             };
 
             let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S%.3f UTC");
-            let target = record.target().bright_black();
+            let target = record.target();
 
             writeln!(
                 buf,
                 "{} [{}] {} - {}",
-                timestamp.to_string().bright_black(),
-                level_color,
+                timestamp,
                 target,
+                level_str,
                 record.args()
             )
         })
         .init();
 
-    log::info!(
-        "🚀 Swarms-RS logging initialized with level: {}",
-        log_level.green().bold()
-    );
+    log::info!("🚀 Swarms-RS logging initialized with level: {}", log_level);
 }
 
 /// Macro for logging with agent context
@@ -67,8 +63,8 @@ macro_rules! log_agent {
     ($level:ident, $agent_name:expr, $agent_id:expr, $($arg:tt)*) => {
         log::$level!(
             "[{}:{}] {}",
-            $agent_name.bright_cyan().bold(),
-            $agent_id.bright_yellow(),
+            $agent_name,
+            $agent_id,
             format!($($arg)*)
         );
     };
@@ -80,9 +76,9 @@ macro_rules! log_task {
     ($level:ident, $agent_name:expr, $agent_id:expr, $task:expr, $($arg:tt)*) => {
         log::$level!(
             "[{}:{}] 📋 Task: {} - {}",
-            $agent_name.bright_cyan().bold(),
-            $agent_id.bright_yellow(),
-            $task.bright_magenta(),
+            $agent_name,
+            $agent_id,
+            $task,
             format!($($arg)*)
         );
     };
@@ -94,9 +90,9 @@ macro_rules! log_tool {
     ($level:ident, $agent_name:expr, $agent_id:expr, $tool_name:expr, $($arg:tt)*) => {
         log::$level!(
             "[{}:{}] 🔧 Tool: {} - {}",
-            $agent_name.bright_cyan().bold(),
-            $agent_id.bright_yellow(),
-            $tool_name.bright_green(),
+            $agent_name,
+            $agent_id,
+            $tool_name,
             format!($($arg)*)
         );
     };
@@ -108,9 +104,9 @@ macro_rules! log_workflow {
     ($level:ident, $agent_name:expr, $agent_id:expr, $workflow_name:expr, $($arg:tt)*) => {
         log::$level!(
             "[{}:{}] 🔄 Workflow: {} - {}",
-            $agent_name.bright_cyan().bold(),
-            $agent_id.bright_yellow(),
-            $workflow_name.bright_blue(),
+            $agent_name,
+            $agent_id,
+            $workflow_name,
             format!($($arg)*)
         );
     };
@@ -122,9 +118,9 @@ macro_rules! log_memory {
     ($level:ident, $agent_name:expr, $agent_id:expr, $operation:expr, $($arg:tt)*) => {
         log::$level!(
             "[{}:{}] 🧠 Memory: {} - {}",
-            $agent_name.bright_cyan().bold(),
-            $agent_id.bright_yellow(),
-            $operation.bright_purple(),
+            $agent_name,
+            $agent_id,
+            $operation,
             format!($($arg)*)
         );
     };
@@ -136,9 +132,9 @@ macro_rules! log_llm {
     ($level:ident, $agent_name:expr, $agent_id:expr, $model:expr, $($arg:tt)*) => {
         log::$level!(
             "[{}:{}] 🤖 LLM: {} - {}",
-            $agent_name.bright_cyan().bold(),
-            $agent_id.bright_yellow(),
-            $model.bright_red(),
+            $agent_name,
+            $agent_id,
+            $model,
             format!($($arg)*)
         );
     };
@@ -150,7 +146,7 @@ macro_rules! log_swarm {
     ($level:ident, $swarm_name:expr, $($arg:tt)*) => {
         log::$level!(
             "[🐝 Swarm: {}] {}",
-            $swarm_name.bright_cyan().bold(),
+            $swarm_name,
             format!($($arg)*)
         );
     };
@@ -162,10 +158,10 @@ macro_rules! log_perf {
     ($level:ident, $component:expr, $metric:expr, $value:expr, $unit:expr) => {
         log::$level!(
             "📊 Performance: {} - {}: {} {}",
-            $component.bright_cyan(),
-            $metric.bright_yellow(),
-            $value.to_string().bright_green().bold(),
-            $unit.bright_white()
+            $component,
+            $metric,
+            $value,
+            $unit
         );
     };
 }
@@ -176,10 +172,10 @@ macro_rules! log_error_ctx {
     ($agent_name:expr, $agent_id:expr, $error:expr, $context:expr) => {
         log::error!(
             "[{}:{}] ❌ Error in {}: {}",
-            $agent_name.bright_cyan().bold(),
-            $agent_id.bright_yellow(),
-            $context.bright_red(),
-            $error.to_string().red()
+            $agent_name,
+            $agent_id,
+            $context,
+            $error
         );
     };
 }
@@ -188,9 +184,9 @@ macro_rules! log_error_ctx {
 pub fn log_agent_init(agent_name: &str, agent_id: &str, config_summary: &str) {
     log::info!(
         "🎯 Agent [{}:{}] initialized with config: {}",
-        agent_name.bright_cyan().bold(),
-        agent_id.bright_yellow(),
-        config_summary.bright_white()
+        agent_name,
+        agent_id,
+        config_summary
     );
 }
 
@@ -198,10 +194,10 @@ pub fn log_agent_init(agent_name: &str, agent_id: &str, config_summary: &str) {
 pub fn log_agent_task_completion(agent_name: &str, agent_id: &str, task: &str, duration_ms: u64) {
     log::info!(
         "✅ Agent [{}:{}] completed task '{}' in {}ms",
-        agent_name.bright_cyan().bold(),
-        agent_id.bright_yellow(),
-        task.bright_magenta(),
-        duration_ms.to_string().bright_green().bold()
+        agent_name,
+        agent_id,
+        task,
+        duration_ms
     );
 }
 
@@ -209,9 +205,9 @@ pub fn log_agent_task_completion(agent_name: &str, agent_id: &str, task: &str, d
 pub fn log_agent_state_change(agent_name: &str, agent_id: &str, from_state: &str, to_state: &str) {
     log::debug!(
         "🔄 Agent [{}:{}] state transition: {} → {}",
-        agent_name.bright_cyan().bold(),
-        agent_id.bright_yellow(),
-        from_state.bright_red(),
-        to_state.bright_green()
+        agent_name,
+        agent_id,
+        from_state,
+        to_state
     );
 }

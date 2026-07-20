@@ -49,6 +49,7 @@
 //! ```rust,no_run
 //! use swarms_rs::agent::SwarmsAgentBuilder;
 //! use swarms_rs::llm::provider::anthropic::Anthropic;
+//! use swarms_rs::structs::agent::Agent;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! // Create Anthropic client from environment
@@ -71,6 +72,7 @@
 //! ```rust,no_run
 //! use swarms_rs::agent::SwarmsAgentBuilder;
 //! use swarms_rs::llm::provider::anthropic::Anthropic;
+//! use swarms_rs::structs::agent::Agent;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! // Use Claude 3.5 Sonnet for complex tasks
@@ -97,23 +99,44 @@
 //! ```rust,no_run
 //! use swarms_rs::agent::SwarmsAgentBuilder;
 //! use swarms_rs::llm::provider::anthropic::Anthropic;
+//! use swarms_rs::structs::agent::Agent;
 //! use swarms_rs::structs::tool::Tool;
+//! use swarms_rs::llm::request::ToolDefinition;
 //!
 //! // Define a custom tool
+//! #[derive(Debug)]
 //! struct WeatherTool;
 //!
-//! impl Tool for WeatherTool {
-//!     fn name(&self) -> &str { "get_weather" }
-//!     fn definition(&self) -> swarms_rs::llm::request::ToolDefinition {
-//!         // ... tool definition
-//! #       unimplemented!()
-//!     }
+//! #[derive(Debug, serde::Deserialize)]
+//! struct WeatherArgs {
+//!     location: String,
 //! }
 //!
-//! impl swarms_rs::structs::tool::ToolDyn for WeatherTool {
-//!     fn call(&self, args: String) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, swarms_rs::structs::tool::ToolError>> + Send + '_>> {
-//! #       unimplemented!()
-//!         // ... tool implementation
+//! impl Tool for WeatherTool {
+//!     type Error = std::io::Error;
+//!     type Args = WeatherArgs;
+//!     type Output = String;
+//!     const NAME: &'static str = "get_weather";
+//!
+//!     fn definition(&self) -> ToolDefinition {
+//!         ToolDefinition {
+//!             name: "get_weather".to_string(),
+//!             description: "Get weather information for a location".to_string(),
+//!             parameters: serde_json::json!({
+//!                 "type": "object",
+//!                 "properties": {
+//!                     "location": {
+//!                         "type": "string",
+//!                         "description": "The location to get weather for"
+//!                     }
+//!                 },
+//!                 "required": ["location"]
+//!             }),
+//!         }
+//!     }
+//!
+//!     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+//!         Ok(format!("Weather in {}: Sunny, 72°F", args.location))
 //!     }
 //! }
 //!
@@ -231,10 +254,12 @@ pub struct Anthropic {
     /// Hyper HTTP client with TLS support
     client: Client<HttpsConnector<HttpConnector>, Full<Bytes>>,
     /// Anthropic API key for authentication
+    #[allow(dead_code)]
     api_key: String,
     /// Claude model identifier (e.g., "claude-3-5-sonnet-20241022")
     model: String,
     /// Base URL for Anthropic API (default: "https://api.anthropic.com")
+    #[allow(dead_code)]
     base_url: String,
     /// Cached API key header value (performance optimization)
     api_key_header: HeaderValue,
@@ -397,14 +422,51 @@ impl Anthropic {
     ///
     /// - Uses serde's optimized deserialization
     /// - Provides detailed error context for debugging
+    /// - Includes response preview for truncated responses
     fn parse_response_efficiently(
         response_text: &str,
     ) -> Result<AnthropicResponse, CompletionError> {
+        // Check for common truncation patterns
+        if response_text.len() < 50 {
+            return Err(CompletionError::Response(format!(
+                "Response too short ({} chars). Response: '{}'",
+                response_text.len(),
+                response_text.chars().take(100).collect::<String>()
+            )));
+        }
+
+        // Check for incomplete JSON
+        let trimmed = response_text.trim();
+        if trimmed.starts_with('{') && !trimmed.ends_with('}') {
+            return Err(CompletionError::Response(format!(
+                "Incomplete JSON object. Response (first 200 chars): '{}...'",
+                response_text.chars().take(200).collect::<String>()
+            )));
+        }
+
+        if trimmed.starts_with('[') && !trimmed.ends_with(']') {
+            return Err(CompletionError::Response(format!(
+                "Incomplete JSON array. Response (first 200 chars): '{}...'",
+                response_text.chars().take(200).collect::<String>()
+            )));
+        }
+
+        // Check for unterminated strings
+        let quote_count = response_text.chars().filter(|&c| c == '"').count();
+        if quote_count % 2 != 0 {
+            return Err(CompletionError::Response(format!(
+                "Unterminated string in JSON. Odd number of quotes ({}). Response: '{}'",
+                quote_count,
+                response_text.chars().take(200).collect::<String>()
+            )));
+        }
+
         serde_json::from_str::<AnthropicResponse>(response_text).map_err(|e| {
             CompletionError::Response(format!(
-                "Failed to parse Anthropic response: {}. Response length: {} chars",
+                "Failed to parse Anthropic response: {}. Response length: {} chars. Response preview: '{}'",
                 e,
-                response_text.len()
+                response_text.len(),
+                response_text.chars().take(300).collect::<String>()
             ))
         })
     }
@@ -545,26 +607,36 @@ enum AnthropicToolResultContent {
 /// Anthropic API response structure
 #[derive(Deserialize, Debug, Clone)]
 pub struct AnthropicResponse {
+    #[allow(dead_code)]
     id: String,
+    #[allow(dead_code)]
     r#type: String,
+    #[allow(dead_code)]
     role: String,
     content: Vec<AnthropicContent>,
+    #[allow(dead_code)]
     model: String,
+    #[allow(dead_code)]
     stop_reason: Option<String>,
+    #[allow(dead_code)]
     stop_sequence: Option<String>,
+    #[allow(dead_code)]
     usage: AnthropicUsage,
 }
 
 /// Anthropic usage information
 #[derive(Deserialize, Debug, Clone)]
 pub struct AnthropicUsage {
+    #[allow(dead_code)]
     input_tokens: u32,
+    #[allow(dead_code)]
     output_tokens: u32,
 }
 
 /// Anthropic API error response
 #[derive(Deserialize, Debug)]
 struct AnthropicError {
+    #[allow(dead_code)]
     r#type: String,
     error: AnthropicErrorDetails,
 }
@@ -668,18 +740,38 @@ impl Model for Anthropic {
 
             let status = response.status();
 
-            // Read response body
-            let body = response
-                .into_body()
-                .collect()
-                .await
-                .map_err(|e| {
-                    CompletionError::Other(format!("Failed to read response body: {}", e))
-                })?
-                .aggregate();
+            // Read response body completely using stream reading
+            let mut response_bytes = Vec::new();
+            let mut body_stream = response.into_body();
 
-            let response_text = String::from_utf8(body.chunk().to_vec())
-                .map_err(|e| CompletionError::Response(e.to_string()))?;
+            while let Some(frame) = body_stream.frame().await {
+                let frame = frame.map_err(|e| {
+                    CompletionError::Other(format!("Failed to read response frame: {}", e))
+                })?;
+
+                if let Some(data) = frame.data_ref() {
+                    response_bytes.extend_from_slice(data.chunk());
+                }
+            }
+
+            if response_bytes.is_empty() {
+                return Err(CompletionError::Response(
+                    "Empty response body from Anthropic API".to_string(),
+                ));
+            }
+
+            let response_text = String::from_utf8(response_bytes).map_err(|e| {
+                CompletionError::Response(format!("Invalid UTF-8 in response: {}", e))
+            })?;
+
+            // Log response for debugging if it's suspiciously short
+            if response_text.len() < 500 {
+                log::debug!(
+                    "Short Anthropic response ({} chars): {}",
+                    response_text.len(),
+                    response_text
+                );
+            }
 
             // Handle non-success status codes
             if !status.is_success() {

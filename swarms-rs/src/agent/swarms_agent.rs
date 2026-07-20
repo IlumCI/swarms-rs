@@ -18,11 +18,12 @@
 //!
 //! ```rust,no_run
 //! use swarms_rs::agent::SwarmsAgentBuilder;
-//! use swarms_rs::llm::provider::openai::OpenAIProvider;
+//! use swarms_rs::llm::provider::openai::OpenAI;
+//! use swarms_rs::structs::agent::Agent;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! // Create an LLM provider
-//! let model = OpenAIProvider::new("your-api-key")?;
+//! let model = OpenAI::from_env();
 //!
 //! // Build an agent
 //! let agent = SwarmsAgentBuilder::new_with_model(model)
@@ -44,11 +45,12 @@
 //!
 //! ```rust,no_run
 //! use swarms_rs::agent::SwarmsAgentBuilder;
-//! use swarms_rs::llm::provider::openai::OpenAIProvider;
+//! use swarms_rs::llm::provider::openai::OpenAI;
+//! use swarms_rs::structs::agent::Agent;
 //! use swarms_rs::structs::tool::Tool;
 //!
 //! # async fn advanced_example() -> Result<(), Box<dyn std::error::Error>> {
-//! let model = OpenAIProvider::new("your-api-key")?;
+//! let model = OpenAI::from_env();
 //!
 //! let agent = SwarmsAgentBuilder::new_with_model(model)
 //!     .agent_name("AdvancedAgent")
@@ -90,7 +92,8 @@ use std::{
     sync::Arc,
 };
 
-use colored::*;
+use twox_hash::XxHash64;
+
 use dashmap::DashMap;
 use futures::{StreamExt, future::BoxFuture, stream};
 use reqwest::IntoUrl;
@@ -102,12 +105,15 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use swarms_macro::tool;
+use tabled::{
+    builder::Builder,
+    settings::{Alignment, Modify, Style, object::Rows},
+};
 use thiserror::Error;
 use tokio::{
     process::Command,
     sync::{Mutex, mpsc},
 };
-use twox_hash::XxHash3_64;
 
 use crate::{
     self as swarms_rs,
@@ -139,10 +145,10 @@ use crate::structs::agent::{Agent, AgentConfig, AgentError};
 ///
 /// ```rust,no_run
 /// use swarms_rs::agent::SwarmsAgentBuilder;
-/// use swarms_rs::llm::provider::openai::OpenAIProvider;
+/// use swarms_rs::llm::provider::openai::OpenAI;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let model = OpenAIProvider::new("api-key")?;
+/// let model = OpenAI::from_env();
 ///
 /// let agent = SwarmsAgentBuilder::new_with_model(model)
 ///     .agent_name("DataAnalyst")
@@ -190,10 +196,10 @@ where
     ///
     /// ```rust,no_run
     /// use swarms_rs::agent::SwarmsAgentBuilder;
-    /// use swarms_rs::llm::provider::openai::OpenAIProvider;
+    /// use swarms_rs::llm::provider::openai::OpenAI;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let model = OpenAIProvider::new("your-api-key")?;
+    /// let model = OpenAI::from_env();
     /// let builder = SwarmsAgentBuilder::new_with_model(model);
     /// # Ok(())
     /// # }
@@ -222,10 +228,10 @@ where
     /// ```rust,no_run
     /// use swarms_rs::agent::SwarmsAgentBuilder;
     /// use swarms_rs::structs::agent::AgentConfig;
-    /// use swarms_rs::llm::provider::openai::OpenAIProvider;
+    /// use swarms_rs::llm::provider::openai::OpenAI;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let model = OpenAIProvider::new("api-key")?;
+    /// let model = OpenAI::from_env();
     /// let custom_config = AgentConfig::builder()
     ///     .agent_name("CustomAgent")
     ///     .max_loops(5)
@@ -233,7 +239,7 @@ where
     ///     .build();
     ///
     /// let agent = SwarmsAgentBuilder::new_with_model(model)
-    ///     .config(*custom_config)
+    ///     .config((*custom_config).clone())
     ///     .build();
     /// # Ok(())
     /// # }
@@ -256,10 +262,10 @@ where
     ///
     /// ```rust,no_run
     /// use swarms_rs::agent::SwarmsAgentBuilder;
-    /// use swarms_rs::llm::provider::openai::OpenAIProvider;
+    /// use swarms_rs::llm::provider::openai::OpenAI;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let model = OpenAIProvider::new("api-key")?;
+    /// let model = OpenAI::from_env();
     ///
     /// let agent = SwarmsAgentBuilder::new_with_model(model)
     ///     .system_prompt("You are a helpful assistant specialized in data analysis. Always provide detailed explanations.")
@@ -290,22 +296,55 @@ where
     ///
     /// ```rust,no_run
     /// use swarms_rs::agent::SwarmsAgentBuilder;
-    /// use swarms_rs::llm::provider::openai::OpenAIProvider;
+    /// use swarms_rs::llm::provider::openai::OpenAI;
+    /// use swarms_rs::structs::agent::Agent;
     /// use swarms_rs::structs::tool::Tool;
+    /// use swarms_rs::llm::request::ToolDefinition;
     ///
-    /// // Define a custom tool (implementation details omitted)
+    /// // Define a custom tool
+    /// #[derive(Debug)]
     /// struct CalculatorTool;
     ///
-    /// # impl Tool for CalculatorTool {
-    /// #     fn name(&self) -> &str { "calculator" }
-    /// #     fn definition(&self) -> swarms_rs::llm::request::ToolDefinition { todo!() }
-    /// # }
-    /// # impl swarms_rs::structs::tool::ToolDyn for CalculatorTool {
-    /// #     fn call(&self, args: String) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String, swarms_rs::structs::tool::ToolError>> + Send + '_>> { todo!() }
-    /// # }
+    /// #[derive(Debug, serde::Deserialize)]
+    /// struct CalculatorArgs {
+    ///     expression: String,
+    /// }
+    ///
+    /// impl Tool for CalculatorTool {
+    ///     type Error = std::io::Error;
+    ///     type Args = CalculatorArgs;
+    ///     type Output = String;
+    ///     const NAME: &'static str = "calculator";
+    ///
+    ///     fn definition(&self) -> ToolDefinition {
+    ///         ToolDefinition {
+    ///             name: "calculator".to_string(),
+    ///             description: "Evaluate mathematical expressions".to_string(),
+    ///             parameters: serde_json::json!({
+    ///                 "type": "object",
+    ///                 "properties": {
+    ///                     "expression": {
+    ///                         "type": "string",
+    ///                         "description": "The mathematical expression to evaluate"
+    ///                     }
+    ///                 },
+    ///                 "required": ["expression"]
+    ///             }),
+    ///         }
+    ///     }
+    ///
+    ///     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
+    ///         // Simple calculator implementation
+    ///         match args.expression.as_str() {
+    ///             "2+2" => Ok("4".to_string()),
+    ///             "10*5" => Ok("50".to_string()),
+    ///             _ => Ok(format!("Result of {}: computed", args.expression)),
+    ///         }
+    ///     }
+    /// }
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let model = OpenAIProvider::new("api-key")?;
+    /// let model = OpenAI::from_env();
     ///
     /// let agent = SwarmsAgentBuilder::new_with_model(model)
     ///     .add_tool(CalculatorTool)
@@ -335,10 +374,10 @@ where
     ///
     /// ```rust,no_run
     /// use swarms_rs::agent::SwarmsAgentBuilder;
-    /// use swarms_rs::llm::provider::openai::OpenAIProvider;
+    /// use swarms_rs::llm::provider::openai::OpenAI;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let model = OpenAIProvider::new("api-key")?;
+    /// let model = OpenAI::from_env();
     ///
     /// let agent = SwarmsAgentBuilder::new_with_model(model)
     ///     .add_sse_mcp_server("weather_service", "https://weather-api.example.com/mcp")
@@ -405,10 +444,10 @@ where
     ///
     /// ```rust,no_run
     /// use swarms_rs::agent::SwarmsAgentBuilder;
-    /// use swarms_rs::llm::provider::openai::OpenAIProvider;
+    /// use swarms_rs::llm::provider::openai::OpenAI;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let model = OpenAIProvider::new("api-key")?;
+    /// let model = OpenAI::from_env();
     ///
     /// let agent = SwarmsAgentBuilder::new_with_model(model)
     ///     .add_stdio_mcp_server("python", ["./my_mcp_tool.py", "--mcp"])
@@ -447,17 +486,14 @@ where
 
     pub fn build(mut self) -> SwarmsAgent<M> {
         if self.config.verbose && log::log_enabled!(log::Level::Info) {
-            log::info!(
-                "🏗️  Building SwarmsAgent: {}",
-                self.config.name.bright_cyan().bold()
-            );
+            log::info!("🏗️  Building SwarmsAgent: {}", self.config.name);
         }
 
         if self.config.task_evaluator_tool_enabled {
             if self.config.verbose {
                 log::debug!(
                     "📋 Adding task evaluator tool for agent: {}",
-                    self.config.name.bright_cyan()
+                    self.config.name
                 );
             }
             self.tools.insert(0, ToolDyn::definition(&TaskEvaluator));
@@ -479,9 +515,9 @@ where
         if agent.config.verbose && log::log_enabled!(log::Level::Info) {
             log::info!(
                 "✅ SwarmsAgent built successfully: {} (ID: {}) with {} tools",
-                agent.config.name.bright_cyan().bold(),
-                agent.config.id.bright_yellow(),
-                self.tools.len().to_string().bright_green().bold()
+                agent.config.name,
+                agent.config.id,
+                self.tools.len()
             );
         }
 
@@ -582,10 +618,10 @@ where
     ///
     /// ```rust,no_run
     /// use swarms_rs::agent::SwarmsAgentBuilder;
-    /// use swarms_rs::llm::provider::openai::OpenAIProvider;
+    /// use swarms_rs::llm::provider::openai::OpenAI;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let model = OpenAIProvider::new("api-key")?;
+    /// let model = OpenAI::from_env();
     ///
     /// // For development with detailed logs
     /// let debug_agent = SwarmsAgentBuilder::new_with_model(model.clone())
@@ -601,6 +637,43 @@ where
     /// ```
     pub fn verbose(mut self, verbose: bool) -> Self {
         self.config.verbose = verbose;
+        self
+    }
+
+    /// Enable or disable pretty printing with colored panels for this agent.
+    ///
+    /// When pretty printing is enabled, the agent will display outputs in colored
+    /// panels similar to Python's Rich library, providing a more visually appealing
+    /// and organized display of agent interactions, tool calls, and responses.
+    ///
+    /// # Arguments
+    ///
+    /// * `pretty_print_on` - `true` to enable pretty printing, `false` to use plain text
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use swarms_rs::agent::SwarmsAgentBuilder;
+    /// use swarms_rs::llm::provider::openai::OpenAI;
+    ///
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let model = OpenAI::from_env();
+    ///
+    /// // Agent with pretty printing enabled
+    /// let pretty_agent = SwarmsAgentBuilder::new_with_model(model.clone())
+    ///     .pretty_print_on(true)
+    ///     .verbose(true)
+    ///     .build();
+    ///
+    /// // Agent with plain text output
+    /// let plain_agent = SwarmsAgentBuilder::new_with_model(model)
+    ///     .pretty_print_on(false)
+    ///     .build();
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn pretty_print_on(mut self, pretty_print_on: bool) -> Self {
+        self.config.pretty_print_on = pretty_print_on;
         self
     }
 }
@@ -645,10 +718,11 @@ where
 ///
 /// ```rust,no_run
 /// use swarms_rs::agent::SwarmsAgentBuilder;
-/// use swarms_rs::llm::provider::openai::OpenAIProvider;
+/// use swarms_rs::llm::provider::openai::OpenAI;
+/// use swarms_rs::structs::agent::Agent;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let model = OpenAIProvider::new("your-api-key")?;
+/// let model = OpenAI::from_env();
 ///
 /// let agent = SwarmsAgentBuilder::new_with_model(model)
 ///     .agent_name("DataAnalyst")
@@ -666,10 +740,11 @@ where
 ///
 /// ```rust,no_run
 /// use swarms_rs::agent::SwarmsAgentBuilder;
-/// use swarms_rs::llm::provider::openai::OpenAIProvider;
+/// use swarms_rs::llm::provider::openai::OpenAI;
+/// use swarms_rs::structs::agent::Agent;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let model = OpenAIProvider::new("your-api-key")?;
+/// let model = OpenAI::from_env();
 ///
 /// let mut agent = SwarmsAgentBuilder::new_with_model(model)
 ///     .agent_name("MultiTaskAgent")
@@ -715,6 +790,71 @@ where
     M: llm::Model + Clone + Send + Sync + 'static,
     M::RawCompletionResponse: Clone + Send + Sync,
 {
+    /// Print agent thinking/output in a panel
+    fn print_agent_output(&self, content: &str) {
+        if self.config.pretty_print_on {
+            let mut builder = Builder::default();
+            builder.push_record(vec![format!("🤖 Agent: {} Output", self.config.name)]);
+            builder.push_record(vec![content]);
+
+            let mut table = builder.build();
+            table.with(Style::rounded());
+            table.with(Modify::new(Rows::first()).with(Alignment::center()));
+
+            println!("{}", table.to_string());
+        } else {
+            println!("🤖 Agent: {}", content);
+        }
+    }
+
+    /// Print tool execution in a panel
+    fn print_tool_execution(&self, tool_name: &str, args: &str, result: &str) {
+        if self.config.pretty_print_on {
+            let mut builder = Builder::default();
+            builder.push_record(vec![format!(
+                "🔧 Agent: {} - Tool Execution",
+                self.config.name
+            )]);
+            builder.push_record(vec![format!("📝 Tool: {}", tool_name)]);
+            builder.push_record(vec![format!("📝 Arguments: {}", args)]);
+            builder.push_record(vec![format!("✅ Result: {}", result)]);
+
+            let mut table = builder.build();
+            table.with(Style::rounded());
+            table.with(Modify::new(Rows::first()).with(Alignment::center()));
+
+            println!("{}", table.to_string());
+        } else {
+            println!("🔧 Tool {} executed with args: {}", tool_name, args);
+            println!("✅ Result: {}", result);
+        }
+    }
+
+    /// Print task completion in a panel
+    fn print_task_complete(&self, task: &str, result: &str) {
+        if self.config.pretty_print_on {
+            let mut builder = Builder::default();
+            builder.push_record(vec![format!(
+                "🎯 Agent: {} - Task Completed",
+                self.config.name
+            )]);
+            builder.push_record(vec![format!("📋 Task: {}", task)]);
+            builder.push_record(vec![format!(
+                "📋 Result: {}",
+                result.chars().take(100).collect::<String>()
+            )]);
+
+            let mut table = builder.build();
+            table.with(Style::rounded());
+            table.with(Modify::new(Rows::first()).with(Alignment::center()));
+
+            println!("{}", table.to_string());
+        } else {
+            println!("🎯 Task '{}' completed!", task);
+            println!("📋 Result: {}", result);
+        }
+    }
+
     /// Creates a new `SwarmsAgent` with minimal configuration.
     ///
     /// This is a simple constructor for creating an agent with just a model and optional
@@ -729,11 +869,11 @@ where
     ///
     /// ```rust,no_run
     /// use swarms_rs::agent::SwarmsAgent;
-    /// use swarms_rs::llm::provider::openai::OpenAIProvider;
+    /// use swarms_rs::llm::provider::openai::OpenAI;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let model = OpenAIProvider::new("api-key")?;
-    /// let agent = SwarmsAgent::new(model, "You are a helpful assistant");
+    /// let model = OpenAI::from_env();
+    /// let agent = SwarmsAgent::new(model, "You are a helpful assistant".to_string());
     /// # Ok(())
     /// # }
     /// ```
@@ -772,11 +912,11 @@ where
     ///
     /// ```rust,no_run
     /// use swarms_rs::agent::SwarmsAgentBuilder;
-    /// use swarms_rs::llm::provider::openai::OpenAIProvider;
+    /// use swarms_rs::llm::provider::openai::OpenAI;
     /// use swarms_rs::agent::ChatResponse;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let model = OpenAIProvider::new("api-key")?;
+    /// let model = OpenAI::from_env();
     /// let agent = SwarmsAgentBuilder::new_with_model(model)
     ///     .system_prompt("You are a helpful math tutor")
     ///     .build();
@@ -1176,12 +1316,22 @@ where
                     let mut is_task_evaluator_called = false;
                     match current_chat_response {
                         ChatResponse::Text(text) => {
+                            // Pretty print agent output
+                            self.print_agent_output(&text);
+
                             last_response_text = text.clone();
                             assistant_memory_content = text;
                         },
                         ChatResponse::ToolCalls(tool_calls) => {
                             let mut formatted_tool_results = String::new();
                             for tool_call in tool_calls {
+                                // Pretty print tool execution
+                                self.print_tool_execution(
+                                    &tool_call.name,
+                                    &tool_call.args,
+                                    &tool_call.result,
+                                );
+
                                 let formatted = format!(
                                     "[Tool name]: {}\n[Tool args]: {}\n[Tool result]: {}\n\n",
                                     tool_call.name, tool_call.args, tool_call.result
@@ -1330,12 +1480,17 @@ where
             // TODO: Handle artifacts
 
             // TODO: More flexible output types, e.g. JSON, CSV, etc.
-            Ok(self
+            let final_result = self
                 .short_memory
                 .0
                 .get(&task)
                 .expect("Task should exist in short memory")
-                .to_string())
+                .to_string();
+
+            // Pretty print the final result
+            self.print_task_complete(&task, &final_result);
+
+            Ok(final_result)
         })
     }
 
@@ -1399,7 +1554,7 @@ where
     }
 
     fn save_task_state(&self, task: String) -> BoxFuture<Result<(), AgentError>> {
-        let mut hasher = XxHash3_64::default();
+        let mut hasher = XxHash64::default();
         task.hash(&mut hasher);
         let task_hash = hasher.finish();
         let task_hash = format!("{:x}", task_hash & 0xFFFFFFFF); // lower 32 bits of the hash
@@ -1457,10 +1612,10 @@ where
 ///
 /// ```rust,no_run
 /// use swarms_rs::agent::{ChatResponse, SwarmsAgentBuilder};
-/// use swarms_rs::llm::provider::openai::OpenAIProvider;
+/// use swarms_rs::llm::provider::openai::OpenAI;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let model = OpenAIProvider::new("api-key")?;
+/// let model = OpenAI::from_env();
 /// let agent = SwarmsAgentBuilder::new_with_model(model).build();
 ///
 /// let response = agent.chat("Hello!", vec![]).await?;

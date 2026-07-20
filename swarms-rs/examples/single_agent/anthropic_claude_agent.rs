@@ -1,12 +1,17 @@
 use dotenv::dotenv;
 use swarms_rs::agent::SwarmsAgentBuilder;
 use swarms_rs::llm::provider::anthropic::Anthropic;
+use swarms_rs::logging::init_logger;
 use swarms_rs::structs::agent::Agent;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
-    env_logger::init();
+
+    // Initialize advanced logging system
+    // Set SWARMS_LOG_LEVEL environment variable for different levels:
+    // TRACE, DEBUG, INFO, WARN, ERROR, OFF
+    init_logger();
 
     let agent = SwarmsAgentBuilder::new_with_model(Anthropic::from_env_with_model(
         "claude-3-5-haiku-20241022",
