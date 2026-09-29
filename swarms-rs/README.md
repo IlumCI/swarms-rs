@@ -2,7 +2,7 @@
 
 <div align="left">
   <a href="https://swarms.ai">
-    <img src="https://raw.githubusercontent.com/The-Swarm-Corporation/swarms-rs/main/logo.svg" style="margin: 15px; max-width: 800px" width="80%" alt="Logo">
+    <img src="https://raw.githubusercontent.com/The-Swarm-Corporation/swarms-rs/main/logo.svg" style="margin: 15px; max-width: 800px" width="100%" alt="Logo">
   </a>
 </div>
 
@@ -13,6 +13,9 @@
   <a href="https://github.com/The-Swarm-Corporation/swarms-rs/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/The-Swarm-Corporation/swarms-rs?style=for-the-badge&color=success" /></a>
 </p>
 
+<a href="README.md">English</a> | <a href="docs/README.zh.md">中文</a> | <a href="docs/README.ja.md">日本語</a>
+
+
 <p align="left">
   <em>The Enterprise-Grade Production-Ready Multi-Agent Orchestration Framework in Rust</em>
 </p>
@@ -21,11 +24,6 @@
 Swarms Rust is the first-ever enterprise-grade, production-ready multi-agent orchestration framework built in Rust, designed to handle the most demanding tasks with unparalleled speed and efficiency. By leveraging Rust's cutting-edge performance and safety features, `swarms-rs` provides a powerful and scalable solution for orchestrating complex multi-agent systems across various industries.
 
 
-## 🌐 Available Languages
-
-- [English](README.md)
-- [中文](docs/README.zh.md)
-- [日本語](docs/README.ja.md)
 
 ## Key Benefits
 
@@ -164,6 +162,26 @@ async fn main() -> Result<()> {
 }
 
 ```
+
+### Any provider by model name
+
+`AnyModel` picks the provider from the model name, so switching providers is a one-string change. It reads the matching API key from the environment, and tools work the same way on every provider:
+
+```rust
+use swarms_rs::llm::provider::any::AnyModel;
+
+let agent = AnyModel::from_model_name("anthropic/claude-opus-5-5")?  // or "openai/gpt-5.5",
+    .agent_builder()                                                // "deepseek/deepseek-chat",
+    .system_prompt("You are a helpful assistant.")                  // "google/gemini-3.8-flash", ...
+    .build();
+```
+
+| Model name | Provider | API key |
+|------------|----------|---------|
+| `openai/...`, or bare `gpt-*`, `o1*`, `o3*`, `o4*` | OpenAI | `OPENAI_API_KEY` |
+| `anthropic/...`, or bare `claude-*` | Anthropic | `ANTHROPIC_API_KEY` |
+| `deepseek/...`, or bare `deepseek-*` | DeepSeek | `DEEPSEEK_API_KEY` |
+| `openrouter/...`, or any other `vendor/model` (Google, Meta, Mistral, ...) | OpenRouter | `OPENROUTER_API_KEY` |
 
 ### OpenRouter
 
@@ -330,7 +348,7 @@ cargo run --example openrouter_model_panel  # several providers' models answer c
 cargo run --example openrouter_pipeline     # research -> write -> edit, a different model per stage
 ```
 
-The full sources are in [`examples/single_agent`](examples/single_agent) and [`examples/multiple_agent`](examples/multiple_agent).
+The full sources are in [`examples/single_agent`](swarms-rs/examples/single_agent) and [`examples/multiple_agent`](swarms-rs/examples/multiple_agent).
 
 --------
 
@@ -529,6 +547,54 @@ async fn main() -> Result<()> {
 }
 ```
 
+### Sub-agents and handoffs
+
+An agent can work with other agents in two ways:
+
+- **Sub-agents** (`add_sub_agent`): the model gets a `delegate_to_<name>` tool. Calling it runs the sub-agent on a subtask and returns its answer, and the calling agent carries on.
+- **Handoffs** (`add_handoff`): the model gets a `transfer_to_<name>` tool. Calling it passes the task, a note on context, and the conversation so far to the other agent, which takes over; the calling agent stops and its output ends with that agent's answer.
+
+```rust
+use swarms_rs::llm::provider::openrouter::OpenRouter;
+use swarms_rs::structs::agent::Agent;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let client = OpenRouter::from_env_with_model("anthropic/claude-opus-5.5");
+
+    let researcher = client
+        .agent_builder()
+        .agent_name("Researcher")
+        .description("Looks up facts and returns a short summary")
+        .build();
+    let writer = client
+        .agent_builder()
+        .agent_name("Writer")
+        .description("Writes the final answer for the user")
+        .build();
+
+    let coordinator = client
+        .agent_builder()
+        .agent_name("Coordinator")
+        .system_prompt("Delegate research to the Researcher, then transfer to the Writer.")
+        .add_sub_agent(researcher) // delegate_to_Researcher
+        .add_handoff(writer) // transfer_to_Writer
+        .max_loops(4)
+        .build();
+
+    let task = "Why did Rust adopt async/await instead of green threads?";
+    println!("{}", coordinator.run(task.to_string()).await?);
+
+    // Tool calls stay typed in the agent's conversation.
+    for call in coordinator.conversation(task).unwrap().tool_outputs() {
+        println!("{} -> {}", call.name, call.result);
+    }
+    Ok(())
+}
+```
+
+Run it with `cargo run --example sub_agents_and_handoffs`. Tool results are kept as `ToolCallOutput` values in the conversation (`Content::ToolCalls`), and `ToolCallOutput::result_as::<T>()` recovers the typed output of a `#[tool]` function.
+
 
 -----------
 
@@ -623,6 +689,13 @@ swarms-rs/
 | **MCP Integration**    | Support for Model Context Protocol tools via STDIO and SSE interfaces                            |
 | **Swarm Orchestration**| Coordination of multiple agents for complex workflows                                            |
 | **Persistence Layer**  | State management and recovery mechanisms                                                         |
+
+## Documentation
+
+- [Conversations and Memory](docs/conversation.md): `AgentConversation`, agent memory, import and export
+- [Persistence](docs/persistence.md): saving, loading, compressing and logging files, and where the framework writes them
+- [Batch Execution and the Swarm Router](docs/batch_and_router.md): `AgentBatchExecutor`, `SwarmRouter` and their configs
+- [Anthropic Claude](docs/ANTHROPIC_README.md): using Claude models
 
 ---------
 
