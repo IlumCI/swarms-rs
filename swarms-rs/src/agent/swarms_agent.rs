@@ -129,7 +129,9 @@ use crate::{
 
 use crate::structs::agent::{Agent, AgentConfig, AgentError};
 
-use super::delegation::{HandoffArgs, HandoffTool, SubAgentTool, tool_name_for};
+use super::delegation::{
+    HandoffArgs, HandoffTool, SubAgentTool, is_valid_tool_name, tool_name_for,
+};
 
 // Kept at its original path; it lives in `structs::tool` so conversations can store it.
 pub use crate::structs::tool::ToolCallOutput;
@@ -360,13 +362,26 @@ where
     /// ```
     pub fn add_tool<T: Tool + 'static>(mut self, tool: T) -> Self {
         let definition = tool.definition();
-        self.register_tool(definition, Arc::new(tool) as Arc<dyn ToolDyn>);
+        if let Err(err) = self.register_tool(definition, Arc::new(tool) as Arc<dyn ToolDyn>) {
+            tracing::error!("{err}");
+        }
         self
     }
 
     /// Register a tool; a later tool with the same name replaces the earlier one, so the
     /// model is never offered duplicate names (which some providers reject).
-    fn register_tool(&mut self, definition: ToolDefinition, tool: Arc<dyn ToolDyn>) {
+    fn register_tool(
+        &mut self,
+        definition: ToolDefinition,
+        tool: Arc<dyn ToolDyn>,
+    ) -> Result<(), String> {
+        if !is_valid_tool_name(&definition.name) {
+            return Err(format!(
+                "Tool '{}' has an invalid name and was not registered; \
+                 OpenAI and Anthropic require tool names to match `^[a-zA-Z0-9_-]{{1,64}}$`",
+                definition.name
+            ));
+        }
         if let Some(existing) = self.tools.iter_mut().find(|t| t.name == definition.name) {
             tracing::warn!(
                 "Tool '{}' registered more than once; keeping the last one",
@@ -377,6 +392,7 @@ where
             self.tools.push(definition.clone());
         }
         self.tools_impl.insert(definition.name, tool);
+        Ok(())
     }
 
     /// Adds a sub-agent the model can delegate subtasks to.
@@ -412,7 +428,9 @@ where
         let tool_name = self.unused_tool_name("delegate_to_", &agent.name());
         let tool = SubAgentTool::new(tool_name, agent);
         let definition = tool.definition();
-        self.register_tool(definition, Arc::new(tool));
+        if let Err(err) = self.register_tool(definition, Arc::new(tool)) {
+            tracing::error!("{err}");
+        }
         self
     }
 
@@ -432,8 +450,11 @@ where
         let tool_name = self.unused_tool_name("transfer_to_", &agent.name());
         let tool = HandoffTool::new(tool_name.clone(), agent.as_ref());
         let definition = tool.definition();
-        self.register_tool(definition, Arc::new(tool));
-        self.handoffs.insert(tool_name, agent);
+        if let Err(err) = self.register_tool(definition, Arc::new(tool)) {
+            tracing::error!("{err}");
+        } else {
+            self.handoffs.insert(tool_name, agent);
+        }
         self
     }
 
@@ -900,6 +921,20 @@ where
     handoffs: HashMap<String, Arc<dyn Agent>>,
 }
 
+fn build_panel(title: &str, rows: &[String]) -> String {
+    let mut builder = Builder::default();
+    builder.push_record(vec![title.to_string()]);
+    for row in rows {
+        builder.push_record(vec![row.clone()]);
+    }
+
+    let mut table = builder.build();
+    table.with(Style::rounded());
+    table.with(Modify::new(Rows::first()).with(Alignment::center()));
+
+    table.to_string()
+}
+
 impl<M> SwarmsAgent<M>
 where
     M: llm::Model + Clone + Send + Sync + 'static,
@@ -908,15 +943,10 @@ where
     /// Print agent thinking/output in a panel
     fn print_agent_output(&self, content: &str) {
         if self.config.pretty_print_on {
-            let mut builder = Builder::default();
-            builder.push_record(vec![format!("🤖 Agent: {} Output", self.config.name)]);
-            builder.push_record(vec![content]);
+            let title = format!("🤖 Agent: {} Output", self.config.name);
+            let rows = vec![content.to_string()];
 
-            let mut table = builder.build();
-            table.with(Style::rounded());
-            table.with(Modify::new(Rows::first()).with(Alignment::center()));
-
-            println!("{}", table);
+            println!("{}", build_panel(&title, &rows));
         } else {
             println!("🤖 Agent: {}", content);
         }
@@ -925,20 +955,14 @@ where
     /// Print tool execution in a panel
     fn print_tool_execution(&self, tool_name: &str, args: &str, result: &str) {
         if self.config.pretty_print_on {
-            let mut builder = Builder::default();
-            builder.push_record(vec![format!(
-                "🔧 Agent: {} - Tool Execution",
-                self.config.name
-            )]);
-            builder.push_record(vec![format!("📝 Tool: {}", tool_name)]);
-            builder.push_record(vec![format!("📝 Arguments: {}", args)]);
-            builder.push_record(vec![format!("✅ Result: {}", result)]);
+            let title = format!("🔧 Agent: {} - Tool Execution", self.config.name);
+            let rows = vec![
+                format!("📝 Tool: {}", tool_name),
+                format!("📝 Arguments: {}", args),
+                format!("✅ Result: {}", result),
+            ];
 
-            let mut table = builder.build();
-            table.with(Style::rounded());
-            table.with(Modify::new(Rows::first()).with(Alignment::center()));
-
-            println!("{}", table);
+            println!("{}", build_panel(&title, &rows));
         } else {
             println!("🔧 Tool {} executed with args: {}", tool_name, args);
             println!("✅ Result: {}", result);
@@ -948,22 +972,16 @@ where
     /// Print task completion in a panel
     fn print_task_complete(&self, task: &str, result: &str) {
         if self.config.pretty_print_on {
-            let mut builder = Builder::default();
-            builder.push_record(vec![format!(
-                "🎯 Agent: {} - Task Completed",
-                self.config.name
-            )]);
-            builder.push_record(vec![format!("📋 Task: {}", task)]);
-            builder.push_record(vec![format!(
-                "📋 Result: {}",
-                result.chars().take(100).collect::<String>()
-            )]);
+            let title = format!("🎯 Agent: {} - Task Completed", self.config.name);
+            let rows = vec![
+                format!("📋 Task: {}", task),
+                format!(
+                    "📋 Result: {}",
+                    result.chars().take(100).collect::<String>()
+                ),
+            ];
 
-            let mut table = builder.build();
-            table.with(Style::rounded());
-            table.with(Modify::new(Rows::first()).with(Alignment::center()));
-
-            println!("{}", table);
+            println!("{}", build_panel(&title, &rows));
         } else {
             println!("🎯 Task '{}' completed!", task);
             println!("📋 Result: {}", result);
